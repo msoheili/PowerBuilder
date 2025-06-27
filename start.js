@@ -34,6 +34,23 @@ const setupUserConfigFromEnv = () => {
   }
 
   const userConfig = {
+    // New text generation config
+    TEXT_LLM: process.env.TEXT_LLM || existingConfig.TEXT_LLM || existingConfig.LLM,
+    TEXT_OPENAI_API_KEY: process.env.TEXT_OPENAI_API_KEY || existingConfig.TEXT_OPENAI_API_KEY || existingConfig.OPENAI_API_KEY,
+    TEXT_GOOGLE_API_KEY: process.env.TEXT_GOOGLE_API_KEY || existingConfig.TEXT_GOOGLE_API_KEY || existingConfig.GOOGLE_API_KEY,
+    TEXT_OLLAMA_MODEL: process.env.TEXT_OLLAMA_MODEL || existingConfig.TEXT_OLLAMA_MODEL || existingConfig.OLLAMA_MODEL,
+    TEXT_API_ADDRESS: process.env.TEXT_API_ADDRESS || existingConfig.TEXT_API_ADDRESS,
+    TEXT_GOOGLE_MODEL: process.env.TEXT_GOOGLE_MODEL || existingConfig.TEXT_GOOGLE_MODEL,
+
+    // New image generation config
+    IMAGE_LLM: process.env.IMAGE_LLM || existingConfig.IMAGE_LLM || existingConfig.LLM,
+    IMAGE_OPENAI_API_KEY: process.env.IMAGE_OPENAI_API_KEY || existingConfig.IMAGE_OPENAI_API_KEY || existingConfig.OPENAI_API_KEY,
+    IMAGE_GOOGLE_API_KEY: process.env.IMAGE_GOOGLE_API_KEY || existingConfig.IMAGE_GOOGLE_API_KEY || existingConfig.GOOGLE_API_KEY,
+    IMAGE_PEXELS_API_KEY: process.env.IMAGE_PEXELS_API_KEY || existingConfig.IMAGE_PEXELS_API_KEY || existingConfig.PEXELS_API_KEY,
+    IMAGE_API_ADDRESS: process.env.IMAGE_API_ADDRESS || existingConfig.IMAGE_API_ADDRESS,
+    IMAGE_GOOGLE_MODEL: process.env.IMAGE_GOOGLE_MODEL || existingConfig.IMAGE_GOOGLE_MODEL,
+
+    // Legacy fields for backward compatibility
     LLM: process.env.LLM || existingConfig.LLM,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY || existingConfig.OPENAI_API_KEY,
     GOOGLE_API_KEY: process.env.GOOGLE_API_KEY || existingConfig.GOOGLE_API_KEY,

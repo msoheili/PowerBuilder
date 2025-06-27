@@ -42,6 +42,7 @@ WORKDIR /app
 # Copy FastAPI and start script
 COPY servers/fastapi/ ./servers/fastapi/
 COPY start.js LICENSE NOTICE ./
+COPY docker-start.sh /app/docker-start.sh
 
 # Copy nginx configuration
 COPY nginx.conf /etc/nginx/nginx.conf

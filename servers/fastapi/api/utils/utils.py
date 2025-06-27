@@ -18,37 +18,75 @@ from api.services.logging import LoggingService
 
 
 def is_ollama_selected() -> bool:
-    return os.getenv("LLM") == "ollama"
+    # Check for text generation LLM first, then fallback to legacy
+    text_llm = os.getenv("TEXT_LLM") or os.getenv("LLM")
+    return text_llm == "ollama"
 
 
 def get_large_model():
-    selected_llm = os.getenv("LLM")
+    # Use text generation configuration
+    selected_llm = os.getenv("TEXT_LLM") or os.getenv("LLM")
+    api_address = os.getenv("TEXT_API_ADDRESS")
+    
     if selected_llm == "openai":
+        if api_address:
+            return ChatOpenAI(model="gpt-4.1", base_url=api_address)
         return ChatOpenAI(model="gpt-4.1")
     elif selected_llm == "google":
-        return ChatGoogleGenerativeAI(model="gemini-2.0-flash")
+        api_key = os.getenv("TEXT_GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        model = os.getenv("TEXT_GOOGLE_MODEL") or "gemini-2.0-flash"
+        if api_key:
+            return ChatGoogleGenerativeAI(model=model, google_api_key=api_key)
+        return ChatGoogleGenerativeAI(model=model)
     else:
-        return ChatOllama(model=os.getenv("OLLAMA_MODEL"), temperature=0.8)
+        model_name = os.getenv("TEXT_OLLAMA_MODEL") or os.getenv("OLLAMA_MODEL")
+        if api_address:
+            return ChatOllama(model=model_name, base_url=api_address, temperature=0.8)
+        return ChatOllama(model=model_name, temperature=0.8)
 
 
 def get_small_model():
-    selected_llm = os.getenv("LLM")
+    # Use text generation configuration
+    selected_llm = os.getenv("TEXT_LLM") or os.getenv("LLM")
+    api_address = os.getenv("TEXT_API_ADDRESS")
+    
     if selected_llm == "openai":
+        if api_address:
+            return ChatOpenAI(model="gpt-4.1-mini", base_url=api_address)
         return ChatOpenAI(model="gpt-4.1-mini")
     elif selected_llm == "google":
-        return ChatGoogleGenerativeAI(model="gemini-2.0-flash")
+        api_key = os.getenv("TEXT_GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        model = os.getenv("TEXT_GOOGLE_MODEL") or "gemini-2.0-flash"
+        if api_key:
+            return ChatGoogleGenerativeAI(model=model, google_api_key=api_key)
+        return ChatGoogleGenerativeAI(model=model)
     else:
-        return ChatOllama(model=os.getenv("OLLAMA_MODEL"), temperature=0.8)
+        model_name = os.getenv("TEXT_OLLAMA_MODEL") or os.getenv("OLLAMA_MODEL")
+        if api_address:
+            return ChatOllama(model=model_name, base_url=api_address, temperature=0.8)
+        return ChatOllama(model=model_name, temperature=0.8)
 
 
 def get_nano_model():
-    selected_llm = os.getenv("LLM")
+    # Use text generation configuration
+    selected_llm = os.getenv("TEXT_LLM") or os.getenv("LLM")
+    api_address = os.getenv("TEXT_API_ADDRESS")
+    
     if selected_llm == "openai":
+        if api_address:
+            return ChatOpenAI(model="gpt-4.1-nano", base_url=api_address)
         return ChatOpenAI(model="gpt-4.1-nano")
     elif selected_llm == "google":
-        return ChatGoogleGenerativeAI(model="gemini-2.0-flash")
+        api_key = os.getenv("TEXT_GOOGLE_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        model = os.getenv("TEXT_GOOGLE_MODEL") or "gemini-2.0-flash"
+        if api_key:
+            return ChatGoogleGenerativeAI(model=model, google_api_key=api_key)
+        return ChatGoogleGenerativeAI(model=model)
     else:
-        return ChatOllama(model=os.getenv("OLLAMA_MODEL"), temperature=0.8)
+        model_name = os.getenv("TEXT_OLLAMA_MODEL") or os.getenv("OLLAMA_MODEL")
+        if api_address:
+            return ChatOllama(model=model_name, base_url=api_address, temperature=0.8)
+        return ChatOllama(model=model_name, temperature=0.8)
 
 
 def get_presentation_dir(presentation_id: str) -> str:
@@ -78,6 +116,21 @@ def get_user_config():
         pass
 
     return UserConfig(
+        # Text Generation Configuration
+        TEXT_LLM=existing_config.TEXT_LLM or os.getenv("TEXT_LLM") or existing_config.LLM or os.getenv("LLM"),
+        TEXT_OPENAI_API_KEY=existing_config.TEXT_OPENAI_API_KEY or os.getenv("TEXT_OPENAI_API_KEY") or existing_config.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY"),
+        TEXT_GOOGLE_API_KEY=existing_config.TEXT_GOOGLE_API_KEY or os.getenv("TEXT_GOOGLE_API_KEY") or existing_config.GOOGLE_API_KEY or os.getenv("GOOGLE_API_KEY"),
+        TEXT_OLLAMA_MODEL=existing_config.TEXT_OLLAMA_MODEL or os.getenv("TEXT_OLLAMA_MODEL") or existing_config.OLLAMA_MODEL or os.getenv("OLLAMA_MODEL"),
+        TEXT_API_ADDRESS=existing_config.TEXT_API_ADDRESS or os.getenv("TEXT_API_ADDRESS"),
+        
+        # Image Generation Configuration
+        IMAGE_LLM=existing_config.IMAGE_LLM or os.getenv("IMAGE_LLM") or existing_config.LLM or os.getenv("LLM"),
+        IMAGE_OPENAI_API_KEY=existing_config.IMAGE_OPENAI_API_KEY or os.getenv("IMAGE_OPENAI_API_KEY") or existing_config.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY"),
+        IMAGE_GOOGLE_API_KEY=existing_config.IMAGE_GOOGLE_API_KEY or os.getenv("IMAGE_GOOGLE_API_KEY") or existing_config.GOOGLE_API_KEY or os.getenv("GOOGLE_API_KEY"),
+        IMAGE_PEXELS_API_KEY=existing_config.IMAGE_PEXELS_API_KEY or os.getenv("IMAGE_PEXELS_API_KEY") or existing_config.PEXELS_API_KEY or os.getenv("PEXELS_API_KEY"),
+        IMAGE_API_ADDRESS=existing_config.IMAGE_API_ADDRESS or os.getenv("IMAGE_API_ADDRESS"),
+        
+        # Legacy fields for backward compatibility
         LLM=existing_config.LLM or os.getenv("LLM"),
         OPENAI_API_KEY=existing_config.OPENAI_API_KEY or os.getenv("OPENAI_API_KEY"),
         GOOGLE_API_KEY=existing_config.GOOGLE_API_KEY or os.getenv("GOOGLE_API_KEY"),
@@ -88,6 +141,32 @@ def get_user_config():
 
 def update_env_with_user_config():
     user_config = get_user_config()
+    
+    # Update environment with text generation config
+    if user_config.TEXT_LLM:
+        os.environ["TEXT_LLM"] = user_config.TEXT_LLM
+    if user_config.TEXT_OPENAI_API_KEY:
+        os.environ["TEXT_OPENAI_API_KEY"] = user_config.TEXT_OPENAI_API_KEY
+    if user_config.TEXT_GOOGLE_API_KEY:
+        os.environ["TEXT_GOOGLE_API_KEY"] = user_config.TEXT_GOOGLE_API_KEY
+    if user_config.TEXT_OLLAMA_MODEL:
+        os.environ["TEXT_OLLAMA_MODEL"] = user_config.TEXT_OLLAMA_MODEL
+    if user_config.TEXT_API_ADDRESS:
+        os.environ["TEXT_API_ADDRESS"] = user_config.TEXT_API_ADDRESS
+    
+    # Update environment with image generation config
+    if user_config.IMAGE_LLM:
+        os.environ["IMAGE_LLM"] = user_config.IMAGE_LLM
+    if user_config.IMAGE_OPENAI_API_KEY:
+        os.environ["IMAGE_OPENAI_API_KEY"] = user_config.IMAGE_OPENAI_API_KEY
+    if user_config.IMAGE_GOOGLE_API_KEY:
+        os.environ["IMAGE_GOOGLE_API_KEY"] = user_config.IMAGE_GOOGLE_API_KEY
+    if user_config.IMAGE_PEXELS_API_KEY:
+        os.environ["IMAGE_PEXELS_API_KEY"] = user_config.IMAGE_PEXELS_API_KEY
+    if user_config.IMAGE_API_ADDRESS:
+        os.environ["IMAGE_API_ADDRESS"] = user_config.IMAGE_API_ADDRESS
+    
+    # Legacy environment updates for backward compatibility
     if user_config.LLM:
         os.environ["LLM"] = user_config.LLM
     if user_config.OPENAI_API_KEY:

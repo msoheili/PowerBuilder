@@ -59,6 +59,23 @@ class SSECompleteResponse(BaseModel):
 
 
 class UserConfig(BaseModel):
+    # Text Generation Configuration
+    TEXT_LLM: Optional[str] = None
+    TEXT_OPENAI_API_KEY: Optional[str] = None
+    TEXT_GOOGLE_API_KEY: Optional[str] = None
+    TEXT_OLLAMA_MODEL: Optional[str] = None
+    TEXT_API_ADDRESS: Optional[str] = None
+    TEXT_GOOGLE_MODEL: Optional[str] = None
+    
+    # Image Generation Configuration
+    IMAGE_LLM: Optional[str] = None
+    IMAGE_OPENAI_API_KEY: Optional[str] = None
+    IMAGE_GOOGLE_API_KEY: Optional[str] = None
+    IMAGE_PEXELS_API_KEY: Optional[str] = None
+    IMAGE_API_ADDRESS: Optional[str] = None
+    IMAGE_GOOGLE_MODEL: Optional[str] = None
+    
+    # Legacy fields for backward compatibility
     LLM: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     GOOGLE_API_KEY: Optional[str] = None

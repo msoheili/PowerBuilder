@@ -174,15 +174,78 @@ export default function Home() {
 
     const canChangeKeys = config.can_change_keys;
 
-    const api_key_changed = (newApiKey: string) => {
-        if (llmConfig.LLM === 'openai') {
-            setLlmConfig({ ...llmConfig, OPENAI_API_KEY: newApiKey });
-        } else if (llmConfig.LLM === 'google') {
-            setLlmConfig({ ...llmConfig, GOOGLE_API_KEY: newApiKey });
-        } else if (llmConfig.LLM === 'ollama') {
-            setLlmConfig({ ...llmConfig, PEXELS_API_KEY: newApiKey });
+    const api_key_changed = (newApiKey: string, type: 'text' | 'image', provider: string) => {
+        if (type === 'text') {
+            if (provider === 'openai') {
+                setLlmConfig({ ...llmConfig, TEXT_OPENAI_API_KEY: newApiKey });
+            } else if (provider === 'google') {
+                setLlmConfig({ ...llmConfig, TEXT_GOOGLE_API_KEY: newApiKey });
+            } else if (provider === 'ollama') {
+                setLlmConfig({ ...llmConfig, TEXT_OLLAMA_MODEL: newApiKey });
+            }
+        } else {
+            if (provider === 'openai') {
+                setLlmConfig({ ...llmConfig, IMAGE_OPENAI_API_KEY: newApiKey });
+            } else if (provider === 'google') {
+                setLlmConfig({ ...llmConfig, IMAGE_GOOGLE_API_KEY: newApiKey });
+            } else if (provider === 'ollama') {
+                setLlmConfig({ ...llmConfig, IMAGE_PEXELS_API_KEY: newApiKey });
+            }
         }
-    }
+    };
+
+    const api_address_changed = (address: string, type: 'text' | 'image') => {
+        if (type === 'text') {
+            setLlmConfig({ ...llmConfig, TEXT_API_ADDRESS: address });
+        } else {
+            setLlmConfig({ ...llmConfig, IMAGE_API_ADDRESS: address });
+        }
+    };
+
+    const changeProvider = (provider: string, type: 'text' | 'image') => {
+        if (type === 'text') {
+            setLlmConfig({ ...llmConfig, TEXT_LLM: provider });
+        } else {
+            setLlmConfig({ ...llmConfig, IMAGE_LLM: provider });
+        }
+    };
+
+    const getCurrentProvider = (type: 'text' | 'image') => {
+        if (type === 'text') {
+            return llmConfig.TEXT_LLM || llmConfig.LLM || 'openai';
+        } else {
+            return llmConfig.IMAGE_LLM || llmConfig.LLM || 'openai';
+        }
+    };
+
+    const getCurrentApiKey = (type: 'text' | 'image', provider: string) => {
+        if (type === 'text') {
+            if (provider === 'openai') {
+                return llmConfig.TEXT_OPENAI_API_KEY || llmConfig.OPENAI_API_KEY || '';
+            } else if (provider === 'google') {
+                return llmConfig.TEXT_GOOGLE_API_KEY || llmConfig.GOOGLE_API_KEY || '';
+            } else if (provider === 'ollama') {
+                return llmConfig.TEXT_OLLAMA_MODEL || llmConfig.OLLAMA_MODEL || '';
+            }
+        } else {
+            if (provider === 'openai') {
+                return llmConfig.IMAGE_OPENAI_API_KEY || llmConfig.OPENAI_API_KEY || '';
+            } else if (provider === 'google') {
+                return llmConfig.IMAGE_GOOGLE_API_KEY || llmConfig.GOOGLE_API_KEY || '';
+            } else if (provider === 'ollama') {
+                return llmConfig.IMAGE_PEXELS_API_KEY || llmConfig.PEXELS_API_KEY || '';
+            }
+        }
+        return '';
+    };
+
+    const getCurrentApiAddress = (type: 'text' | 'image') => {
+        if (type === 'text') {
+            return llmConfig.TEXT_API_ADDRESS || '';
+        } else {
+            return llmConfig.IMAGE_API_ADDRESS || '';
+        }
+    };
 
     const handleSaveConfig = async () => {
         if (llmConfig.LLM === 'ollama') {
@@ -222,13 +285,6 @@ export default function Home() {
             setIsLoading(false);
         }
     };
-
-    const changeProvider = (provider: string) => {
-        setLlmConfig({ ...llmConfig, LLM: provider });
-        if (provider === 'ollama') {
-            fetchOllamaModels();
-        }
-    }
 
     const pullOllamaModels = async (): Promise<void> => {
         return new Promise((resolve, reject) => {
@@ -305,15 +361,15 @@ export default function Home() {
                             {Object.keys(PROVIDER_CONFIGS).map((provider) => (
                                 <button
                                     key={provider}
-                                    onClick={() => changeProvider(provider)}
-                                    className={`relative p-4 rounded-lg border-2 transition-all duration-200 ${llmConfig.LLM === provider
+                                    onClick={() => changeProvider(provider, 'text')}
+                                    className={`relative p-4 rounded-lg border-2 transition-all duration-200 ${getCurrentProvider('text') === provider
                                         ? "border-blue-500 bg-blue-50"
                                         : "border-gray-200 hover:border-blue-200 hover:bg-gray-50"
                                         }`}
                                 >
                                     <div className="flex items-center justify-center gap-3">
                                         <span
-                                            className={`font-medium text-center ${llmConfig.LLM === provider
+                                            className={`font-medium text-center ${getCurrentProvider('text') === provider
                                                 ? "text-blue-700"
                                                 : "text-gray-700"
                                                 }`}
@@ -327,17 +383,17 @@ export default function Home() {
                     </div>
 
                     {/* API Key Input */}
-                    {llmConfig.LLM !== 'ollama' && <div className="mb-8">
+                    {getCurrentProvider('text') !== 'ollama' && <div className="mb-8">
                         <label className="block text-sm font-medium text-gray-700 mb-2">
-                            {llmConfig.LLM!.charAt(0).toUpperCase() +
-                                llmConfig.LLM!.slice(1)}{" "}
+                            {getCurrentProvider('text')!.charAt(0).toUpperCase() +
+                                getCurrentProvider('text')!.slice(1)}{" "}
                             API Key
                         </label>
                         <div className="relative">
                             <input
                                 type="text"
-                                value={llmConfig.LLM === 'openai' ? llmConfig.OPENAI_API_KEY || '' : llmConfig.GOOGLE_API_KEY || ''}
-                                onChange={(e) => api_key_changed(e.target.value)}
+                                value={getCurrentApiKey('text', getCurrentProvider('text'))}
+                                onChange={(e) => api_key_changed(e.target.value, 'text', getCurrentProvider('text'))}
                                 className="w-full px-4 py-2.5 outline-none border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
                                 placeholder="Enter your API key"
                             />
@@ -348,7 +404,7 @@ export default function Home() {
                         </p>
                     </div>}
                     {
-                        llmConfig.LLM === 'ollama' && (<div>
+                        getCurrentProvider('text') === 'ollama' && (<div>
                             <div className="mb-8">
                                 <label className="block text-sm font-medium text-gray-700 mb-3">
                                     Choose a supported model
@@ -447,8 +503,8 @@ export default function Home() {
                                         required
                                         placeholder="Enter your Pexels API key"
                                         className="w-full px-4 py-2.5 outline-none border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-                                        value={llmConfig.PEXELS_API_KEY || ''}
-                                        onChange={(e) => api_key_changed(e.target.value)}
+                                        value={getCurrentApiKey('image', getCurrentProvider('image'))}
+                                        onChange={(e) => api_key_changed(e.target.value, 'image', getCurrentProvider('image'))}
                                     />
                                 </div>
                                 <p className="mt-2 text-sm text-gray-500 flex items-center gap-2">
@@ -468,8 +524,8 @@ export default function Home() {
                                     Selected Models
                                 </h3>
                                 <p className="text-sm text-blue-700">
-                                    Using {llmConfig.LLM === 'ollama' ? llmConfig.OLLAMA_MODEL ?? '_____' : PROVIDER_CONFIGS[llmConfig.LLM!].textModels[0].label} for text
-                                    generation and {PROVIDER_CONFIGS[llmConfig.LLM!].imageModels[0].label} for
+                                    Using {getCurrentProvider('text') === 'ollama' ? llmConfig.OLLAMA_MODEL ?? '_____' : PROVIDER_CONFIGS[getCurrentProvider('text')!].textModels[0].label} for text
+                                    generation and {PROVIDER_CONFIGS[getCurrentProvider('text')!].imageModels[0].label} for
                                     images
                                 </p>
                                 <p className="text-sm text-blue-600 mt-2 opacity-75">
@@ -486,14 +542,14 @@ export default function Home() {
                                 <div className="flex items-start gap-3">
                                     <Info className="w-5 h-5 text-blue-600 mt-1" />
                                     <h3 className="text-lg font-medium text-gray-900">
-                                        {PROVIDER_CONFIGS[llmConfig.LLM!].apiGuide.title}
+                                        {PROVIDER_CONFIGS[getCurrentProvider('text')!].apiGuide.title}
                                     </h3>
                                 </div>
                             </AccordionTrigger>
                             <AccordionContent className="px-6 pb-6">
                                 <div className="space-y-4">
                                     <ol className="list-decimal list-inside space-y-2 text-gray-600">
-                                        {PROVIDER_CONFIGS[llmConfig.LLM!].apiGuide.steps.map((step, index) => (
+                                        {PROVIDER_CONFIGS[getCurrentProvider('text')!].apiGuide.steps.map((step, index) => (
                                             <li key={index} className="text-sm">
                                                 {step}
                                             </li>
@@ -501,9 +557,9 @@ export default function Home() {
                                     </ol>
 
                                     <div className="flex flex-col sm:flex-row gap-4 mt-6">
-                                        {PROVIDER_CONFIGS[llmConfig.LLM!].apiGuide.videoUrl && (
+                                        {PROVIDER_CONFIGS[getCurrentProvider('text')!].apiGuide.videoUrl && (
                                             <Link
-                                                href={PROVIDER_CONFIGS[llmConfig.LLM!].apiGuide.videoUrl!}
+                                                href={PROVIDER_CONFIGS[getCurrentProvider('text')!].apiGuide.videoUrl!}
                                                 target="_blank"
                                                 className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 transition-colors"
                                             >
@@ -513,7 +569,7 @@ export default function Home() {
                                             </Link>
                                         )}
                                         <Link
-                                            href={PROVIDER_CONFIGS[llmConfig.LLM!].apiGuide.docsUrl}
+                                            href={PROVIDER_CONFIGS[getCurrentProvider('text')!].apiGuide.docsUrl}
                                             target="_blank"
                                             className="flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700 transition-colors"
                                         >
@@ -538,20 +594,20 @@ export default function Home() {
                         {isLoading ? (
                             <div className="flex items-center justify-center gap-2">
                                 <Loader2 className="w-4 h-4 animate-spin" />
-                                {llmConfig.LLM === 'ollama' && downloadingModel.downloaded || 0 > 0
+                                {getCurrentProvider('text') === 'ollama' && downloadingModel.downloaded || 0 > 0
                                     ? `Downloading Model (${(((downloadingModel.downloaded || 0) / (downloadingModel.size || 1)) * 100).toFixed(0)}%)`
                                     : 'Saving Configuration...'
                                 }
                             </div>
                         ) : (
-                            llmConfig.LLM === 'ollama' && !llmConfig.OLLAMA_MODEL
+                            getCurrentProvider('text') === 'ollama' && !llmConfig.OLLAMA_MODEL
                                 ? 'Please Select a Model'
                                 : 'Save Configuration'
                         )}
                     </button>
 
                     {
-                        llmConfig.LLM === 'ollama' && downloadingModel.status && downloadingModel.status !== 'pulled' && (
+                        getCurrentProvider('text') === 'ollama' && downloadingModel.status && downloadingModel.status !== 'pulled' && (
                             <div className="mt-3 text-sm bg-green-100 rounded-lg p-2 font-semibold capitalize text-center text-gray-600">
                                 {downloadingModel.status}
                             </div>

@@ -25,7 +25,29 @@ const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
         title: "Ollama API Key",
         description: "Required for using Ollama services",
         placeholder: "Choose a model",
+    },
+    pexels: {
+        title: "Pexels API Key",
+        description: "Required for using Pexels image service",
+        placeholder: "Enter your Pexels API key",
     }
+};
+
+const DEFAULT_TEXT_API_ADDRESSES: Record<string, string> = {
+    openai: 'https://api.openai.com/v1',
+    google: 'https://generativelanguage.googleapis.com/v1beta',
+    ollama: 'http://localhost:11434',
+};
+
+const DEFAULT_IMAGE_API_ADDRESSES: Record<string, string> = {
+    openai: 'https://api.openai.com/v1/images',
+    ollama: 'http://localhost:11434',
+    pexels: 'https://api.pexels.com/v1',
+};
+
+const GOOGLE_MODELS = {
+    text: ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'],
+    image: ['gemini-2.0-flash-preview-image-generation']
 };
 
 interface ProviderConfig {
@@ -55,16 +77,87 @@ const SettingsPage = () => {
         done: false,
     });
     const [isLoading, setIsLoading] = useState<boolean>(false);
+    const [textApiAddress, setTextApiAddress] = useState(() => DEFAULT_TEXT_API_ADDRESSES[llmConfig.TEXT_LLM || llmConfig.LLM || 'openai'] || '');
+    const [imageApiAddress, setImageApiAddress] = useState(() => DEFAULT_IMAGE_API_ADDRESSES[llmConfig.IMAGE_LLM || llmConfig.LLM || 'openai'] || '');
 
-    const api_key_changed = (apiKey: string) => {
-        if (llmConfig.LLM === 'openai') {
-            setLlmConfig({ ...llmConfig, OPENAI_API_KEY: apiKey });
-        } else if (llmConfig.LLM === 'google') {
-            setLlmConfig({ ...llmConfig, GOOGLE_API_KEY: apiKey });
-        } else if (llmConfig.LLM === 'ollama') {
-            setLlmConfig({ ...llmConfig, PEXELS_API_KEY: apiKey });
+    const api_key_changed = (apiKey: string, type: 'text' | 'image', provider: string) => {
+        if (type === 'text') {
+            if (provider === 'openai') {
+                setLlmConfig({ ...llmConfig, TEXT_OPENAI_API_KEY: apiKey });
+            } else if (provider === 'google') {
+                setLlmConfig({ ...llmConfig, TEXT_GOOGLE_API_KEY: apiKey });
+            } else if (provider === 'ollama') {
+                setLlmConfig({ ...llmConfig, TEXT_OLLAMA_MODEL: apiKey });
+            }
+        } else {
+            if (provider === 'openai') {
+                setLlmConfig({ ...llmConfig, IMAGE_OPENAI_API_KEY: apiKey });
+            } else if (provider === 'google') {
+                setLlmConfig({ ...llmConfig, IMAGE_GOOGLE_API_KEY: apiKey });
+            } else if (provider === 'ollama') {
+                setLlmConfig({ ...llmConfig, IMAGE_PEXELS_API_KEY: apiKey });
+            } else if (provider === 'pexels') {
+                setLlmConfig({ ...llmConfig, IMAGE_PEXELS_API_KEY: apiKey });
+            }
         }
-    }
+    };
+
+    const api_address_changed = (address: string, type: 'text' | 'image') => {
+        if (type === 'text') {
+            setTextApiAddress(address);
+            setLlmConfig({ ...llmConfig, TEXT_API_ADDRESS: address });
+        } else {
+            setImageApiAddress(address);
+            setLlmConfig({ ...llmConfig, IMAGE_API_ADDRESS: address });
+        }
+    };
+
+    const changeProvider = (provider: string, type: 'text' | 'image') => {
+        if (type === 'text') {
+            setLlmConfig({ ...llmConfig, TEXT_LLM: provider });
+        } else {
+            setLlmConfig({ ...llmConfig, IMAGE_LLM: provider });
+        }
+    };
+
+    const getCurrentProvider = (type: 'text' | 'image') => {
+        if (type === 'text') {
+            return llmConfig.TEXT_LLM || llmConfig.LLM || 'openai';
+        } else {
+            return llmConfig.IMAGE_LLM || llmConfig.LLM || 'openai';
+        }
+    };
+
+    const getCurrentApiKey = (type: 'text' | 'image', provider: string) => {
+        if (type === 'text') {
+            if (provider === 'openai') {
+                return llmConfig.TEXT_OPENAI_API_KEY || llmConfig.OPENAI_API_KEY || '';
+            } else if (provider === 'google') {
+                return llmConfig.TEXT_GOOGLE_API_KEY || llmConfig.GOOGLE_API_KEY || '';
+            } else if (provider === 'ollama') {
+                return llmConfig.TEXT_OLLAMA_MODEL || llmConfig.OLLAMA_MODEL || '';
+            }
+        } else {
+            if (provider === 'openai') {
+                return llmConfig.IMAGE_OPENAI_API_KEY || llmConfig.OPENAI_API_KEY || '';
+            } else if (provider === 'google') {
+                return llmConfig.IMAGE_GOOGLE_API_KEY || llmConfig.GOOGLE_API_KEY || '';
+            } else if (provider === 'ollama') {
+                return llmConfig.IMAGE_PEXELS_API_KEY || llmConfig.PEXELS_API_KEY || '';
+            } else if (provider === 'pexels') {
+                return llmConfig.IMAGE_PEXELS_API_KEY || llmConfig.PEXELS_API_KEY || '';
+            }
+        }
+        return '';
+    };
+
+    const getCurrentApiAddress = (type: 'text' | 'image') => {
+        if (type === 'text') {
+            return llmConfig.TEXT_API_ADDRESS || '';
+        } else {
+            return llmConfig.IMAGE_API_ADDRESS || '';
+        }
+    };
 
     const handleSaveConfig = async () => {
         if (llmConfig.LLM === 'ollama') {
@@ -104,13 +197,6 @@ const SettingsPage = () => {
             setIsLoading(false);
         }
     };
-
-    const changeProvider = (provider: string) => {
-        setLlmConfig({ ...llmConfig, LLM: provider });
-        if (provider === 'ollama') {
-            fetchOllamaModels();
-        }
-    }
 
     const pullOllamaModels = async (): Promise<void> => {
         return new Promise((resolve, reject) => {
@@ -154,7 +240,6 @@ const SettingsPage = () => {
     }
 
     useEffect(() => {
-
         if (!canChangeKeys) {
             router.push("/dashboard");
         }
@@ -162,6 +247,24 @@ const SettingsPage = () => {
             fetchOllamaModels();
         }
     }, [userConfigState.llm_config.LLM]);
+
+    useEffect(() => {
+        const defaultAddr = DEFAULT_TEXT_API_ADDRESSES[llmConfig.TEXT_LLM || llmConfig.LLM || 'openai'] || '';
+        if (!textApiAddress || Object.values(DEFAULT_TEXT_API_ADDRESSES).includes(textApiAddress)) {
+            setTextApiAddress(defaultAddr);
+            setLlmConfig((prev) => ({ ...prev, TEXT_API_ADDRESS: defaultAddr }));
+        }
+        // eslint-disable-next-line
+    }, [llmConfig.TEXT_LLM]);
+
+    useEffect(() => {
+        const defaultAddr = DEFAULT_IMAGE_API_ADDRESSES[llmConfig.IMAGE_LLM || llmConfig.LLM || 'openai'] || '';
+        if (!imageApiAddress || Object.values(DEFAULT_IMAGE_API_ADDRESSES).includes(imageApiAddress)) {
+            setImageApiAddress(defaultAddr);
+            setLlmConfig((prev) => ({ ...prev, IMAGE_API_ADDRESS: defaultAddr }));
+        }
+        // eslint-disable-next-line
+    }, [llmConfig.IMAGE_LLM]);
 
     if (!canChangeKeys) {
         return null;
@@ -178,11 +281,19 @@ const SettingsPage = () => {
                         <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
                     </div>
 
-                    {/* API Configuration Section */}
+                    {/* First-time user guidance */}
+                    <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded">
+                        <div className="flex items-center gap-2">
+                            <span className="font-semibold text-yellow-800">First time here?</span>
+                            <span className="text-yellow-700">Please configure at least one of the following: <b>Text Generation</b> or <b>Image Generation</b>. For best results, set up both.</span>
+                        </div>
+                    </div>
+
+                    {/* Text Generation Configuration Section */}
                     <div className="bg-white rounded-xl shadow-sm p-6">
                         <div className="flex items-center gap-3 mb-6">
                             <Key className="w-5 h-5 text-blue-600" />
-                            <h2 className="text-lg font-medium text-gray-900">API Configuration</h2>
+                            <h2 className="text-lg font-medium text-gray-900">Text Generation Configuration</h2>
                         </div>
 
                         {/* Provider Selection */}
@@ -194,15 +305,15 @@ const SettingsPage = () => {
                                 {Object.keys(PROVIDER_CONFIGS).map((provider) => (
                                     <button
                                         key={provider}
-                                        onClick={() => changeProvider(provider)}
-                                        className={`relative p-4 rounded-lg border-2 transition-all duration-200 ${llmConfig.LLM === provider
+                                        onClick={() => changeProvider(provider, 'text')}
+                                        className={`relative p-4 rounded-lg border-2 transition-all duration-200 ${getCurrentProvider('text') === provider
                                             ? "border-blue-500 bg-blue-50"
                                             : "border-gray-200 hover:border-blue-200 hover:bg-gray-50"
                                             }`}
                                     >
                                         <div className="flex items-center justify-center gap-3">
                                             <span
-                                                className={`font-medium text-center ${llmConfig.LLM === provider
+                                                className={`font-medium text-center ${getCurrentProvider('text') === provider
                                                     ? "text-blue-700"
                                                     : "text-gray-700"
                                                     }`}
@@ -215,20 +326,55 @@ const SettingsPage = () => {
                             </div>
                         </div>
 
+                        {/* API Address Input */}
+                        {getCurrentProvider('text') !== 'google' && (
+                            <div className="mb-6">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    API Address (Optional)
+                                </label>
+                                <input
+                                    type="text"
+                                    value={textApiAddress}
+                                    onChange={(e) => api_address_changed(e.target.value, 'text')}
+                                    className="w-full px-4 py-2.5 border border-gray-300 outline-none rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+                                    placeholder="https://api.openai.com/v1 (leave empty for default)"
+                                />
+                                <p className="mt-2 text-sm text-gray-500">Custom API endpoint for text generation (optional)</p>
+                            </div>
+                        )}
+
+                        {getCurrentProvider('text') === 'google' && (
+                            <div className="mb-6">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Model Name
+                                </label>
+                                <select
+                                    value={llmConfig.TEXT_GOOGLE_MODEL || 'gemini-2.0-flash'}
+                                    onChange={(e) => setLlmConfig({ ...llmConfig, TEXT_GOOGLE_MODEL: e.target.value })}
+                                    className="w-full px-4 py-2.5 border border-gray-300 outline-none rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+                                >
+                                    {GOOGLE_MODELS.text.map(model => (
+                                        <option key={model} value={model}>{model}</option>
+                                    ))}
+                                </select>
+                                <p className="mt-2 text-sm text-gray-500">Select the Google Gemini model for text generation</p>
+                            </div>
+                        )}
+
                         {/* API Key Input */}
-                        {llmConfig.LLM !== 'ollama' && (
+                        {getCurrentProvider('text') !== 'ollama' && (
                             <div className="space-y-6">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        {PROVIDER_CONFIGS[llmConfig.LLM!].title}
+                                        {PROVIDER_CONFIGS[getCurrentProvider('text')!].title}
                                     </label>
                                     <div className="flex gap-3">
                                         <input
                                             type="text"
-                                            value={llmConfig.LLM === 'openai' ? llmConfig.OPENAI_API_KEY || '' : llmConfig.GOOGLE_API_KEY || ''}
-                                            onChange={(e) => api_key_changed(e.target.value)}
+                                            value={getCurrentApiKey('text', getCurrentProvider('text'))}
+                                            onChange={(e) => api_key_changed(e.target.value, 'text', getCurrentProvider('text'))}
                                             className="flex-1 px-4 py-2.5 border border-gray-300 outline-none rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-                                            placeholder={PROVIDER_CONFIGS[llmConfig.LLM!].placeholder}
+                                            placeholder={PROVIDER_CONFIGS[getCurrentProvider('text')!].placeholder}
                                         />
                                         <button
                                             onClick={handleSaveConfig}
@@ -248,13 +394,13 @@ const SettingsPage = () => {
                                             )}
                                         </button>
                                     </div>
-                                    <p className="mt-2 text-sm text-gray-500">{PROVIDER_CONFIGS[llmConfig.LLM!].description}</p>
+                                    <p className="mt-2 text-sm text-gray-500">{PROVIDER_CONFIGS[getCurrentProvider('text')!].description}</p>
                                 </div>
                             </div>
                         )}
 
                         {/* Ollama Configuration */}
-                        {llmConfig.LLM === 'ollama' && (
+                        {getCurrentProvider('text') === 'ollama' && (
                             <div className="space-y-6">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -354,8 +500,8 @@ const SettingsPage = () => {
                                             required
                                             placeholder="Enter your Pexels API key"
                                             className="flex-1 px-4 py-2.5 outline-none border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
-                                            value={llmConfig.PEXELS_API_KEY || ''}
-                                            onChange={(e) => api_key_changed(e.target.value)}
+                                            value={getCurrentApiKey('image', getCurrentProvider('image'))}
+                                            onChange={(e) => api_key_changed(e.target.value, 'image', getCurrentProvider('image'))}
                                         />
                                         <button
                                             onClick={handleSaveConfig}
@@ -385,6 +531,156 @@ const SettingsPage = () => {
                                         {downloadingModel.status}
                                     </div>
                                 )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Image Generation Configuration Section */}
+                    <div className="bg-white rounded-xl shadow-sm p-6">
+                        <div className="flex items-center gap-3 mb-6">
+                            <Key className="w-5 h-5 text-blue-600" />
+                            <h2 className="text-lg font-medium text-gray-900">Image Generation Configuration</h2>
+                        </div>
+
+                        {/* Provider Selection */}
+                        <div className="mb-8">
+                            <label className="block text-sm font-medium text-gray-700 mb-3">
+                                Select Image Generation Provider
+                            </label>
+                            <div className="grid grid-cols-2 gap-4">
+                                {Object.keys(PROVIDER_CONFIGS).map((provider) => (
+                                    <button
+                                        key={provider}
+                                        onClick={() => changeProvider(provider, 'image')}
+                                        className={`relative p-4 rounded-lg border-2 transition-all duration-200 ${getCurrentProvider('image') === provider
+                                            ? "border-blue-500 bg-blue-50"
+                                            : "border-gray-200 hover:border-blue-200 hover:bg-gray-50"
+                                            }`}
+                                    >
+                                        <div className="flex items-center justify-center gap-3">
+                                            <span
+                                                className={`font-medium text-center ${getCurrentProvider('image') === provider
+                                                    ? "text-blue-700"
+                                                    : "text-gray-700"
+                                                    }`}
+                                            >
+                                                {provider.charAt(0).toUpperCase() + provider.slice(1)}
+                                            </span>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* API Address Input */}
+                        {getCurrentProvider('image') !== 'google' && getCurrentProvider('image') !== 'pexels' && (
+                            <div className="mb-6">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    API Address (Optional)
+                                </label>
+                                <input
+                                    type="text"
+                                    value={imageApiAddress}
+                                    onChange={(e) => api_address_changed(e.target.value, 'image')}
+                                    className="w-full px-4 py-2.5 border border-gray-300 outline-none rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+                                    placeholder="https://api.openai.com/v1/images (leave empty for default)"
+                                />
+                                <p className="mt-2 text-sm text-gray-500">Custom API endpoint for image generation (optional)</p>
+                            </div>
+                        )}
+
+                        {getCurrentProvider('image') === 'google' && (
+                            <div className="mb-6">
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Model Name
+                                </label>
+                                <select
+                                    value={llmConfig.IMAGE_GOOGLE_MODEL || 'gemini-2.0-flash-preview-image-generation'}
+                                    onChange={(e) => setLlmConfig({ ...llmConfig, IMAGE_GOOGLE_MODEL: e.target.value })}
+                                    className="w-full px-4 py-2.5 border border-gray-300 outline-none rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+                                >
+                                    {GOOGLE_MODELS.image.map(model => (
+                                        <option key={model} value={model}>{model}</option>
+                                    ))}
+                                </select>
+                                <p className="mt-2 text-sm text-gray-500">Select the Google Gemini model for image generation</p>
+                            </div>
+                        )}
+
+                        {/* API Key Input */}
+                        {getCurrentProvider('image') !== 'ollama' && (
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        {PROVIDER_CONFIGS[getCurrentProvider('image')!].title}
+                                    </label>
+                                    <div className="flex gap-3">
+                                        <input
+                                            type="text"
+                                            value={getCurrentApiKey('image', getCurrentProvider('image'))}
+                                            onChange={(e) => api_key_changed(e.target.value, 'image', getCurrentProvider('image'))}
+                                            className="flex-1 px-4 py-2.5 border border-gray-300 outline-none rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+                                            placeholder={PROVIDER_CONFIGS[getCurrentProvider('image')!].placeholder}
+                                        />
+                                        <button
+                                            onClick={handleSaveConfig}
+                                            disabled={isLoading}
+                                            className={`px-4 py-2 rounded-lg transition-colors ${isLoading
+                                                ? 'bg-gray-400 cursor-not-allowed'
+                                                : 'bg-blue-600 hover:bg-blue-700'
+                                                } text-white`}
+                                        >
+                                            {isLoading ? (
+                                                <div className="flex items-center gap-2">
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                    Saving...
+                                                </div>
+                                            ) : (
+                                                'Save'
+                                            )}
+                                        </button>
+                                    </div>
+                                    <p className="mt-2 text-sm text-gray-500">{PROVIDER_CONFIGS[getCurrentProvider('image')!].description}</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Ollama Image Configuration */}
+                        {getCurrentProvider('image') === 'ollama' && (
+                            <div className="space-y-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Pexels API Key (required for images)
+                                    </label>
+                                    <div className="flex gap-3">
+                                        <input
+                                            type="text"
+                                            required
+                                            placeholder="Enter your Pexels API key"
+                                            className="flex-1 px-4 py-2.5 outline-none border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors"
+                                            value={getCurrentApiKey('image', 'ollama')}
+                                            onChange={(e) => api_key_changed(e.target.value, 'image', 'ollama')}
+                                        />
+                                        <button
+                                            onClick={handleSaveConfig}
+                                            disabled={isLoading}
+                                            className={`px-4 py-2 rounded-lg transition-colors ${isLoading
+                                                ? 'bg-gray-400 cursor-not-allowed'
+                                                : 'bg-blue-600 hover:bg-blue-700'
+                                                } text-white`}
+                                        >
+                                            {isLoading ? (
+                                                <div className="flex items-center gap-2">
+                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                    Saving...
+                                                </div>
+                                            ) : (
+                                                'Save'
+                                            )}
+                                        </button>
+                                    </div>
+                                    <p className="mt-2 text-sm text-gray-500">Required for using Ollama services with image generation</p>
+                                </div>
                             </div>
                         )}
                     </div>
