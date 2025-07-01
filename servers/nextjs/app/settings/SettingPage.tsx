@@ -2,13 +2,21 @@
 import React, { useState, useEffect } from "react";
 import Header from "../dashboard/components/Header";
 import Wrapper from "@/components/Wrapper";
-import { Settings, Key, Loader2 } from 'lucide-react';
+import { Settings, Key, Loader2, Palette, Type, Layout, MessageSquare, Plus, Trash2, Save } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { RootState } from "@/store/store";
 import { useSelector } from "react-redux";
 import { handleSaveLLMConfig } from "@/utils/storeHelpers";
 import { useRouter } from "next/navigation";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import DraggableElement from "@/components/DraggableElement";
 
 const PROVIDER_CONFIGS: Record<string, ProviderConfig> = {
     openai: {
@@ -56,6 +64,74 @@ interface ProviderConfig {
     placeholder: string;
 }
 
+// Theme creation interfaces
+interface CustomTheme {
+    id: string;
+    name: string;
+    colors: {
+        background: string;
+        slideBg: string;
+        slideTitle: string;
+        slideHeading: string;
+        slideDescription: string;
+        slideBox: string;
+        iconBg: string;
+        chartColors: string[];
+    };
+    font: {
+        family: string;
+        size: number;
+        weight: number;
+    };
+    layouts: {
+        enabled: number[];
+        custom: CustomLayout[];
+    };
+    prompts: {
+        imagePrompt: string;
+        contentStyle: string;
+        slideStructure: string;
+    };
+    isActive: boolean;
+}
+
+interface CustomLayout {
+    id: string;
+    name: string;
+    type: string;
+    structure: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        content?: string;
+        items?: string[];
+        src?: string;
+        chartType?: string;
+        [key: string]: any;
+    };
+    preview: string;
+}
+
+const AVAILABLE_FONTS = [
+    { value: "Inter", label: "Inter", family: "var(--font-inter)" },
+    { value: "Fraunces", label: "Fraunces", family: "var(--font-fraunces)" },
+    { value: "Montserrat", label: "Montserrat", family: "var(--font-montserrat)" },
+    { value: "Inria Serif", label: "Inria Serif", family: "var(--font-inria-serif)" },
+    { value: "Instrument Sans", label: "Instrument Sans", family: "var(--font-instrument-sans)" },
+];
+
+const AVAILABLE_LAYOUTS = [
+    { id: 1, name: "Title + Content", type: "type1", description: "Title with content and image" },
+    { id: 2, name: "List Layout", type: "type2", description: "Bullet points or numbered list" },
+    { id: 4, name: "Grid Layout", type: "type4", description: "Grid of content items" },
+    { id: 5, name: "Chart Layout", type: "type5", description: "Chart with description" },
+    { id: 6, name: "Timeline", type: "type6", description: "Timeline layout" },
+    { id: 7, name: "Icon Grid", type: "type7", description: "Icons with descriptions" },
+    { id: 8, name: "Icon List", type: "type8", description: "Icons with list items" },
+    { id: 9, name: "Numbered List", type: "type9", description: "Numbered list layout" },
+];
+
 const SettingsPage = () => {
     const router = useRouter();
 
@@ -79,6 +155,12 @@ const SettingsPage = () => {
     const [isLoading, setIsLoading] = useState<boolean>(false);
     const [textApiAddress, setTextApiAddress] = useState(() => DEFAULT_TEXT_API_ADDRESSES[llmConfig.TEXT_LLM || llmConfig.LLM || 'openai'] || '');
     const [imageApiAddress, setImageApiAddress] = useState(() => DEFAULT_IMAGE_API_ADDRESSES[llmConfig.IMAGE_LLM || llmConfig.LLM || 'openai'] || '');
+
+    // Theme creation state
+    const [customThemes, setCustomThemes] = useState<CustomTheme[]>([]);
+    const [activeThemeTab, setActiveThemeTab] = useState<string>("general");
+    const [editingTheme, setEditingTheme] = useState<CustomTheme | null>(null);
+    const [showThemeCreator, setShowThemeCreator] = useState(false);
 
     const api_key_changed = (apiKey: string, type: 'text' | 'image', provider: string) => {
         if (type === 'text') {
@@ -265,6 +347,205 @@ const SettingsPage = () => {
         }
         // eslint-disable-next-line
     }, [llmConfig.IMAGE_LLM]);
+
+    // Theme creation functions
+    const createNewTheme = () => {
+        const newTheme: CustomTheme = {
+            id: `theme_${Date.now()}`,
+            name: "New Custom Theme",
+            colors: {
+                background: "#f8fafc",
+                slideBg: "#ffffff",
+                slideTitle: "#1e293b",
+                slideHeading: "#334155",
+                slideDescription: "#64748b",
+                slideBox: "#f1f5f9",
+                iconBg: "#3b82f6",
+                chartColors: ["#3b82f6", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b"],
+            },
+            font: {
+                family: "Inter",
+                size: 16,
+                weight: 400,
+            },
+            layouts: {
+                enabled: [1, 2, 4, 5, 6, 7, 8, 9],
+                custom: [],
+            },
+            prompts: {
+                imagePrompt: "Modern and professional with clean lines and minimal design. Use a sophisticated color palette with subtle gradients and professional typography.",
+                contentStyle: "Professional and engaging content with clear hierarchy and concise messaging.",
+                slideStructure: "Balanced layout with clear visual hierarchy, appropriate spacing, and professional presentation style.",
+            },
+            isActive: false,
+        };
+        setEditingTheme(newTheme);
+        setShowThemeCreator(true);
+    };
+
+    const saveTheme = async (theme: CustomTheme) => {
+        try {
+            // Save theme to localStorage or API
+            const existingThemes = customThemes.filter(t => t.id !== theme.id);
+            const updatedThemes = [...existingThemes, theme];
+            setCustomThemes(updatedThemes);
+            localStorage.setItem('customThemes', JSON.stringify(updatedThemes));
+            
+            // Trigger custom event to notify other components
+            window.dispatchEvent(new CustomEvent('customThemesUpdated'));
+            
+            toast({
+                title: "Success",
+                description: `Theme "${theme.name}" saved successfully`,
+            });
+            
+            setShowThemeCreator(false);
+            setEditingTheme(null);
+        } catch (error) {
+            toast({
+                title: "Error",
+                description: "Failed to save theme",
+                variant: "destructive",
+            });
+        }
+    };
+
+    const deleteTheme = (themeId: string) => {
+        const updatedThemes = customThemes.filter(t => t.id !== themeId);
+        setCustomThemes(updatedThemes);
+        localStorage.setItem('customThemes', JSON.stringify(updatedThemes));
+        
+        // Trigger custom event to notify other components
+        window.dispatchEvent(new CustomEvent('customThemesUpdated'));
+        
+        toast({
+            title: "Success",
+            description: "Theme deleted successfully",
+        });
+    };
+
+    const editTheme = (theme: CustomTheme) => {
+        setEditingTheme(theme);
+        setShowThemeCreator(true);
+    };
+
+    const toggleLayout = (themeId: string, layoutId: number) => {
+        setCustomThemes((prev: CustomTheme[]) => prev.map(theme => {
+            if (theme.id === themeId) {
+                const enabled = theme.layouts.enabled.includes(layoutId)
+                    ? theme.layouts.enabled.filter(id => id !== layoutId)
+                    : [...theme.layouts.enabled, layoutId];
+                return { ...theme, layouts: { ...theme.layouts, enabled } };
+            }
+            return theme;
+        }));
+    };
+
+    // Dynamic layout builder functions
+    const addElement = (type: string, name: string) => {
+        if (!editingTheme) return;
+        
+        // Calculate better positioning based on existing elements
+        const existingElements = editingTheme.layouts.custom;
+        let x = 10, y = 10;
+        
+        if (existingElements.length > 0) {
+            // Find a position that doesn't overlap with existing elements
+            const gridSize = 20; // Grid size for positioning
+            const maxAttempts = 50;
+            let attempts = 0;
+            
+            while (attempts < maxAttempts) {
+                x = Math.floor(Math.random() * 5) * gridSize + 10; // 10, 30, 50, 70, 90
+                y = Math.floor(Math.random() * 4) * gridSize + 10; // 10, 30, 50, 70
+                
+                // Check if this position overlaps with existing elements
+                const overlaps = existingElements.some(element => {
+                    const elementRight = element.structure.x + element.structure.width;
+                    const elementBottom = element.structure.y + element.structure.height;
+                    const newRight = x + 30; // Default width
+                    const newBottom = y + 20; // Default height
+                    
+                    return !(x >= elementRight || newRight <= element.structure.x ||
+                           y >= elementBottom || newBottom <= element.structure.y);
+                });
+                
+                if (!overlaps) break;
+                attempts++;
+            }
+        }
+        
+        const newElement: CustomLayout = {
+            id: `element_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            name: name,
+            type: type,
+            structure: {
+                x: x,
+                y: y,
+                width: 30,
+                height: 20,
+                content: '',
+                items: [],
+                src: '',
+                chartType: 'bar'
+            },
+            preview: ''
+        };
+        
+        setEditingTheme({
+            ...editingTheme,
+            id: editingTheme.id,
+            layouts: {
+                ...editingTheme.layouts,
+                custom: [...editingTheme.layouts.custom, newElement]
+            }
+        });
+    };
+
+    const removeElement = (elementId: string) => {
+        if (!editingTheme) return;
+        
+        setEditingTheme({
+            ...editingTheme,
+            id: editingTheme.id,
+            layouts: {
+                ...editingTheme.layouts,
+                custom: editingTheme.layouts.custom.filter(element => element.id !== elementId)
+            }
+        });
+    };
+
+    const updateElementProperty = (elementId: string, property: string, value: any) => {
+        if (!editingTheme) return;
+        
+        setEditingTheme({
+            ...editingTheme,
+            id: editingTheme.id,
+            layouts: {
+                ...editingTheme.layouts,
+                custom: (editingTheme.layouts.custom || []).filter(Boolean).map(element => {
+                    if (element.id === elementId) {
+                        return {
+                            ...element,
+                            structure: {
+                                ...element.structure,
+                                [property]: value
+                            }
+                        };
+                    }
+                    return element;
+                })
+            }
+        });
+    };
+
+    // Load saved themes on component mount
+    useEffect(() => {
+        const savedThemes = localStorage.getItem('customThemes');
+        if (savedThemes) {
+            setCustomThemes(JSON.parse(savedThemes));
+        }
+    }, []);
 
     if (!canChangeKeys) {
         return null;
@@ -684,8 +965,707 @@ const SettingsPage = () => {
                             </div>
                         )}
                     </div>
+
+                    {/* Custom Theme Creation Section */}
+                    <div className="bg-white rounded-xl shadow-sm p-6">
+                        <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-3">
+                                <Palette className="w-5 h-5 text-blue-600" />
+                                <h2 className="text-lg font-medium text-gray-900">Custom Theme Creation</h2>
+                            </div>
+                            <Button
+                                onClick={createNewTheme}
+                                className="bg-blue-600 hover:bg-blue-700 text-white"
+                            >
+                                <Plus className="w-4 h-4 mr-2" />
+                                Create New Theme
+                            </Button>
+                        </div>
+
+                        {/* Existing Custom Themes */}
+                        {customThemes.length > 0 && (
+                            <div className="mb-6">
+                                <h3 className="text-md font-medium text-gray-700 mb-4">Your Custom Themes</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {customThemes.map((theme) => (
+                                        <Card key={theme.id} className="relative">
+                                            <CardHeader className="pb-3">
+                                                <div className="flex items-center justify-between">
+                                                    <CardTitle className="text-sm">{theme.name}</CardTitle>
+                                                    <div className="flex gap-1">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => editTheme(theme)}
+                                                            className="h-6 w-6 p-0"
+                                                        >
+                                                            <Palette className="w-3 h-3" />
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => deleteTheme(theme.id)}
+                                                            className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                                        >
+                                                            <Trash2 className="w-3 h-3" />
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            </CardHeader>
+                                            <CardContent className="pt-0">
+                                                <div className="space-y-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="w-4 h-4 rounded" style={{ backgroundColor: theme.colors.slideBg }}></div>
+                                                        <span className="text-xs text-gray-600">{theme.font.family}</span>
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {(Array.isArray(theme?.layouts?.enabled) ? theme.layouts.enabled : []).slice(0, 3).map((layoutId) => {
+                                                            const layout = AVAILABLE_LAYOUTS.find(l => l.id === layoutId);
+                                                            return layout ? (
+                                                                <Badge key={layoutId} variant="secondary" className="text-xs">
+                                                                    {layout.name}
+                                                                </Badge>
+                                                            ) : null;
+                                                        })}
+                                                        {(Array.isArray(theme?.layouts?.enabled) ? theme.layouts.enabled : []).length > 3 && (
+                                                            <Badge variant="secondary" className="text-xs">
+                                                                +{(Array.isArray(theme?.layouts?.enabled) ? theme.layouts.enabled : []).length - 3} more
+                                                            </Badge>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </CardContent>
+                                        </Card>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {customThemes.length === 0 && (
+                            <div className="text-center py-8 text-gray-500">
+                                <Palette className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                                <p>No custom themes created yet.</p>
+                                <p className="text-sm">Create your first custom theme to get started!</p>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </Wrapper>
+
+            {/* Theme Creator Modal */}
+            {showThemeCreator && editingTheme && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+                        <div className="flex items-center justify-between p-6 border-b">
+                            <h2 className="text-xl font-semibold">Create Custom Theme</h2>
+                            <Button
+                                variant="ghost"
+                                onClick={() => {
+                                    setShowThemeCreator(false);
+                                    setEditingTheme(null);
+                                }}
+                            >
+                                ×
+                            </Button>
+                        </div>
+                        
+                        <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+                            <Tabs value={activeThemeTab} onValueChange={setActiveThemeTab}>
+                                <TabsList className="grid w-full grid-cols-4">
+                                    <TabsTrigger value="general">General</TabsTrigger>
+                                    <TabsTrigger value="colors">Colors</TabsTrigger>
+                                    <TabsTrigger value="layouts">Layouts</TabsTrigger>
+                                    <TabsTrigger value="prompts">Prompts</TabsTrigger>
+                                </TabsList>
+
+                                <TabsContent value="general" className="space-y-4">
+                                    <div>
+                                        <Label htmlFor="theme-name">Theme Name</Label>
+                                        <Input
+                                            id="theme-name"
+                                            value={editingTheme.name}
+                                            onChange={(e) => setEditingTheme({ ...editingTheme, name: e.target.value })}
+                                            placeholder="Enter theme name"
+                                        />
+                                    </div>
+                                    
+                                    <div>
+                                        <Label htmlFor="font-family">Font Family</Label>
+                                        <Select
+                                            value={editingTheme.font.family}
+                                            onValueChange={(value) => setEditingTheme({
+                                                ...editingTheme,
+                                                font: { ...editingTheme.font, family: value }
+                                            })}
+                                        >
+                                            <SelectTrigger>
+                                                <SelectContent>
+                                                    {AVAILABLE_FONTS.map((font) => (
+                                                        <SelectItem key={font.value} value={font.value}>
+                                                            {font.label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </SelectTrigger>
+                                        </Select>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <Label htmlFor="font-size">Font Size (px)</Label>
+                                            <Input
+                                                id="font-size"
+                                                type="number"
+                                                value={editingTheme.font.size}
+                                                onChange={(e) => setEditingTheme({
+                                                    ...editingTheme,
+                                                    font: { ...editingTheme.font, size: parseInt(e.target.value) }
+                                                })}
+                                            />
+                                        </div>
+                                        <div>
+                                            <Label htmlFor="font-weight">Font Weight</Label>
+                                            <Input
+                                                id="font-weight"
+                                                type="number"
+                                                min="100"
+                                                max="900"
+                                                step="100"
+                                                value={editingTheme.font.weight}
+                                                onChange={(e) => setEditingTheme({
+                                                    ...editingTheme,
+                                                    font: { ...editingTheme.font, weight: parseInt(e.target.value) }
+                                                })}
+                                            />
+                                        </div>
+                                    </div>
+                                </TabsContent>
+
+                                <TabsContent value="colors" className="space-y-4">
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <Label htmlFor="background">Background Color</Label>
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    id="background"
+                                                    type="color"
+                                                    value={editingTheme.colors.background}
+                                                    onChange={(e) => setEditingTheme({
+                                                        ...editingTheme,
+                                                        colors: { ...editingTheme.colors, background: e.target.value }
+                                                    })}
+                                                    className="w-16 h-10"
+                                                />
+                                                <Input
+                                                    value={editingTheme.colors.background}
+                                                    onChange={(e) => setEditingTheme({
+                                                        ...editingTheme,
+                                                        colors: { ...editingTheme.colors, background: e.target.value }
+                                                    })}
+                                                    placeholder="#ffffff"
+                                                />
+                                            </div>
+                                        </div>
+                                        
+                                        <div>
+                                            <Label htmlFor="slide-bg">Slide Background</Label>
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    id="slide-bg"
+                                                    type="color"
+                                                    value={editingTheme.colors.slideBg}
+                                                    onChange={(e) => setEditingTheme({
+                                                        ...editingTheme,
+                                                        colors: { ...editingTheme.colors, slideBg: e.target.value }
+                                                    })}
+                                                    className="w-16 h-10"
+                                                />
+                                                <Input
+                                                    value={editingTheme.colors.slideBg}
+                                                    onChange={(e) => setEditingTheme({
+                                                        ...editingTheme,
+                                                        colors: { ...editingTheme.colors, slideBg: e.target.value }
+                                                    })}
+                                                    placeholder="#ffffff"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <Label htmlFor="slide-title">Title Color</Label>
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    id="slide-title"
+                                                    type="color"
+                                                    value={editingTheme.colors.slideTitle}
+                                                    onChange={(e) => setEditingTheme({
+                                                        ...editingTheme,
+                                                        colors: { ...editingTheme.colors, slideTitle: e.target.value }
+                                                    })}
+                                                    className="w-16 h-10"
+                                                />
+                                                <Input
+                                                    value={editingTheme.colors.slideTitle}
+                                                    onChange={(e) => setEditingTheme({
+                                                        ...editingTheme,
+                                                        colors: { ...editingTheme.colors, slideTitle: e.target.value }
+                                                    })}
+                                                    placeholder="#000000"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <Label htmlFor="slide-heading">Heading Color</Label>
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    id="slide-heading"
+                                                    type="color"
+                                                    value={editingTheme.colors.slideHeading}
+                                                    onChange={(e) => setEditingTheme({
+                                                        ...editingTheme,
+                                                        colors: { ...editingTheme.colors, slideHeading: e.target.value }
+                                                    })}
+                                                    className="w-16 h-10"
+                                                />
+                                                <Input
+                                                    value={editingTheme.colors.slideHeading}
+                                                    onChange={(e) => setEditingTheme({
+                                                        ...editingTheme,
+                                                        colors: { ...editingTheme.colors, slideHeading: e.target.value }
+                                                    })}
+                                                    placeholder="#333333"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <Label htmlFor="slide-description">Description Color</Label>
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    id="slide-description"
+                                                    type="color"
+                                                    value={editingTheme.colors.slideDescription}
+                                                    onChange={(e) => setEditingTheme({
+                                                        ...editingTheme,
+                                                        colors: { ...editingTheme.colors, slideDescription: e.target.value }
+                                                    })}
+                                                    className="w-16 h-10"
+                                                />
+                                                <Input
+                                                    value={editingTheme.colors.slideDescription}
+                                                    onChange={(e) => setEditingTheme({
+                                                        ...editingTheme,
+                                                        colors: { ...editingTheme.colors, slideDescription: e.target.value }
+                                                    })}
+                                                    placeholder="#666666"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <Label htmlFor="slide-box">Box Color</Label>
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    id="slide-box"
+                                                    type="color"
+                                                    value={editingTheme.colors.slideBox}
+                                                    onChange={(e) => setEditingTheme({
+                                                        ...editingTheme,
+                                                        colors: { ...editingTheme.colors, slideBox: e.target.value }
+                                                    })}
+                                                    className="w-16 h-10"
+                                                />
+                                                <Input
+                                                    value={editingTheme.colors.slideBox}
+                                                    onChange={(e) => setEditingTheme({
+                                                        ...editingTheme,
+                                                        colors: { ...editingTheme.colors, slideBox: e.target.value }
+                                                    })}
+                                                    placeholder="#f5f5f5"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <Label htmlFor="icon-bg">Icon Background</Label>
+                                            <div className="flex gap-2">
+                                                <Input
+                                                    id="icon-bg"
+                                                    type="color"
+                                                    value={editingTheme.colors.iconBg}
+                                                    onChange={(e) => setEditingTheme({
+                                                        ...editingTheme,
+                                                        colors: { ...editingTheme.colors, iconBg: e.target.value }
+                                                    })}
+                                                    className="w-16 h-10"
+                                                />
+                                                <Input
+                                                    value={editingTheme.colors.iconBg}
+                                                    onChange={(e) => setEditingTheme({
+                                                        ...editingTheme,
+                                                        colors: { ...editingTheme.colors, iconBg: e.target.value }
+                                                    })}
+                                                    placeholder="#3b82f6"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <Label>Chart Colors</Label>
+                                        <div className="grid grid-cols-5 gap-2 mt-2">
+                                            {editingTheme.colors.chartColors.map((color, index) => (
+                                                <div key={index} className="flex gap-1">
+                                                    <Input
+                                                        type="color"
+                                                        value={color}
+                                                        onChange={(e) => {
+                                                            const newColors = [...editingTheme.colors.chartColors];
+                                                            newColors[index] = e.target.value;
+                                                            setEditingTheme({
+                                                                ...editingTheme,
+                                                                colors: { ...editingTheme.colors, chartColors: newColors }
+                                                            });
+                                                        }}
+                                                        className="w-12 h-8"
+                                                    />
+                                                    <Input
+                                                        value={color}
+                                                        onChange={(e) => {
+                                                            const newColors = [...editingTheme.colors.chartColors];
+                                                            newColors[index] = e.target.value;
+                                                            setEditingTheme({
+                                                                ...editingTheme,
+                                                                colors: { ...editingTheme.colors, chartColors: newColors }
+                                                            });
+                                                        }}
+                                                        className="flex-1 text-xs"
+                                                    />
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </TabsContent>
+
+                                <TabsContent value="layouts" className="space-y-4">
+                                    <div>
+                                        <Label>Dynamic Slide Layout Builder</Label>
+                                        <p className="text-sm text-gray-600 mb-4">Create custom slide layouts by adding and arranging elements</p>
+                                        
+                                        {/* Layout Preview */}
+                                        <div className="mb-6">
+                                            <Label className="text-sm font-medium mb-2 block">Layout Preview</Label>
+                                            <div 
+                                                className="w-full h-64 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50 relative overflow-hidden"
+                                                style={{ backgroundColor: editingTheme.colors.slideBg }}
+                                                id="layout-preview-container"
+                                            >
+                                                {editingTheme.layouts.custom.length === 0 ? (
+                                                    <div className="flex items-center justify-center h-full text-gray-500">
+                                                        <div className="text-center">
+                                                            <Layout className="w-8 h-8 mx-auto mb-2" />
+                                                            <p>No elements added yet</p>
+                                                            <p className="text-xs">Add elements below to build your layout</p>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="p-4 h-full relative">
+                                                        {(editingTheme.layouts.custom || []).filter(Boolean).map((element, index) => (
+                                                            <DraggableElement
+                                                                key={element.id}
+                                                                element={element}
+                                                                onUpdate={(updatedElement) => {
+                                                                    const newElements = [...editingTheme.layouts.custom];
+                                                                    newElements[index] = updatedElement;
+                                                                    setEditingTheme({
+                                                                        ...editingTheme,
+                                                                        layouts: { ...editingTheme.layouts, custom: newElements }
+                                                                    });
+                                                                }}
+                                                                onRemove={() => removeElement(element.id)}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Element Controls */}
+                                        <div className="space-y-4">
+                                            <div>
+                                                <Label className="text-sm font-medium mb-2 block">Add Elements</Label>
+                                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                                    <button
+                                                        onClick={() => addElement('title', 'Title')}
+                                                        className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                                                    >
+                                                        <div className="text-sm font-medium">Title</div>
+                                                        <div className="text-xs text-gray-600">Main heading</div>
+                                                    </button>
+                                                    
+                                                    <button
+                                                        onClick={() => addElement('subtitle', 'Subtitle')}
+                                                        className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                                                    >
+                                                        <div className="text-sm font-medium">Subtitle</div>
+                                                        <div className="text-xs text-gray-600">Secondary heading</div>
+                                                    </button>
+                                                    
+                                                    <button
+                                                        onClick={() => addElement('text', 'Text Block')}
+                                                        className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                                                    >
+                                                        <div className="text-sm font-medium">Text Block</div>
+                                                        <div className="text-xs text-gray-600">Paragraph text</div>
+                                                    </button>
+                                                    
+                                                    <button
+                                                        onClick={() => addElement('bullet-list', 'Bullet List')}
+                                                        className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                                                    >
+                                                        <div className="text-sm font-medium">Bullet List</div>
+                                                        <div className="text-xs text-gray-600">List items</div>
+                                                    </button>
+                                                    
+                                                    <button
+                                                        onClick={() => addElement('image', 'Image')}
+                                                        className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                                                    >
+                                                        <div className="text-sm font-medium">Image</div>
+                                                        <div className="text-xs text-gray-600">Photo or graphic</div>
+                                                    </button>
+                                                    
+                                                    <button
+                                                        onClick={() => addElement('chart', 'Chart')}
+                                                        className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                                                    >
+                                                        <div className="text-sm font-medium">Chart</div>
+                                                        <div className="text-xs text-gray-600">Data visualization</div>
+                                                    </button>
+                                                    
+                                                    <button
+                                                        onClick={() => addElement('icon', 'Icon')}
+                                                        className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                                                    >
+                                                        <div className="text-sm font-medium">Icon</div>
+                                                        <div className="text-xs text-gray-600">Small icon</div>
+                                                    </button>
+                                                    
+                                                    <button
+                                                        onClick={() => addElement('divider', 'Divider')}
+                                                        className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                                                    >
+                                                        <div className="text-sm font-medium">Divider</div>
+                                                        <div className="text-xs text-gray-600">Separator line</div>
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Element Properties */}
+                                            {editingTheme.layouts.custom.length > 0 && (
+                                                <div>
+                                                    <Label className="text-sm font-medium mb-2 block">Element Properties</Label>
+                                                    <div className="space-y-3">
+                                                        {(editingTheme.layouts.custom || []).filter(Boolean).map((element, index) => (
+                                                            <div key={element.id} className="border border-gray-200 rounded-lg p-3">
+                                                                <div className="flex items-center justify-between mb-2">
+                                                                    <span className="font-medium text-sm">{element.name}</span>
+                                                                    <button
+                                                                        onClick={() => removeElement(element.id)}
+                                                                        className="text-red-500 hover:text-red-700 text-xs"
+                                                                    >
+                                                                        Remove
+                                                                    </button>
+                                                                </div>
+                                                                
+                                                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                                                    <div>
+                                                                        <Label className="text-xs">X Position (%)</Label>
+                                                                        <Input
+                                                                            type="number"
+                                                                            min="0"
+                                                                            max="100"
+                                                                            value={element.structure?.x}
+                                                                            onChange={(e) => updateElementProperty(element.id, 'x', parseInt(e.target.value))}
+                                                                            className="h-6 text-xs"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <Label className="text-xs">Y Position (%)</Label>
+                                                                        <Input
+                                                                            type="number"
+                                                                            min="0"
+                                                                            max="100"
+                                                                            value={element.structure?.y}
+                                                                            onChange={(e) => updateElementProperty(element.id, 'y', parseInt(e.target.value))}
+                                                                            className="h-6 text-xs"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <Label className="text-xs">Width (%)</Label>
+                                                                        <Input
+                                                                            type="number"
+                                                                            min="10"
+                                                                            max="100"
+                                                                            value={element.structure?.width}
+                                                                            onChange={(e) => updateElementProperty(element.id, 'width', parseInt(e.target.value))}
+                                                                            className="h-6 text-xs"
+                                                                        />
+                                                                    </div>
+                                                                    <div>
+                                                                        <Label className="text-xs">Height (%)</Label>
+                                                                        <Input
+                                                                            type="number"
+                                                                            min="10"
+                                                                            max="100"
+                                                                            value={element.structure?.height}
+                                                                            onChange={(e) => updateElementProperty(element.id, 'height', parseInt(e.target.value))}
+                                                                            className="h-6 text-xs"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                                
+                                                                {/* Element-specific properties */}
+                                                                {element.type === 'text' && (
+                                                                    <div className="mt-2">
+                                                                        <Label className="text-xs">Text Content</Label>
+                                                                        <Textarea
+                                                                            value={element.structure?.content || ''}
+                                                                            onChange={(e) => updateElementProperty(element.id, 'content', e.target.value)}
+                                                                            placeholder="Enter text content..."
+                                                                            className="h-16 text-xs"
+                                                                        />
+                                                                    </div>
+                                                                )}
+                                                                
+                                                                {element.type === 'bullet-list' && (
+                                                                    <div className="mt-2">
+                                                                        <Label className="text-xs">List Items (one per line)</Label>
+                                                                        <Textarea
+                                                                            value={element.structure?.items?.join('\n') || ''}
+                                                                            onChange={(e) => updateElementProperty(element.id, 'items', e.target.value.split('\n').filter(item => item.trim()))}
+                                                                            placeholder="Item 1&#10;Item 2&#10;Item 3"
+                                                                            className="h-16 text-xs"
+                                                                        />
+                                                                    </div>
+                                                                )}
+                                                                
+                                                                {element.type === 'image' && (
+                                                                    <div className="mt-2">
+                                                                        <Label className="text-xs">Image URL or Prompt</Label>
+                                                                        <Input
+                                                                            value={element.structure?.src || ''}
+                                                                            onChange={(e) => updateElementProperty(element.id, 'src', e.target.value)}
+                                                                            placeholder="Enter image URL or AI prompt..."
+                                                                            className="h-6 text-xs"
+                                                                        />
+                                                                    </div>
+                                                                )}
+                                                                
+                                                                {element.type === 'chart' && (
+                                                                    <div className="mt-2">
+                                                                        <Label className="text-xs">Chart Type</Label>
+                                                                        <Select
+                                                                            value={element.structure?.chartType || 'bar'}
+                                                                            onValueChange={(value) => updateElementProperty(element.id, 'chartType', value)}
+                                                                        >
+                                                                            <SelectTrigger className="h-6 text-xs">
+                                                                                <SelectContent>
+                                                                                    <SelectItem value="bar">Bar Chart</SelectItem>
+                                                                                    <SelectItem value="line">Line Chart</SelectItem>
+                                                                                    <SelectItem value="pie">Pie Chart</SelectItem>
+                                                                                    <SelectItem value="area">Area Chart</SelectItem>
+                                                                                </SelectContent>
+                                                                            </SelectTrigger>
+                                                                        </Select>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </TabsContent>
+
+                                <TabsContent value="prompts" className="space-y-4">
+                                    <div>
+                                        <Label htmlFor="image-prompt">Image Generation Prompt</Label>
+                                        <Textarea
+                                            id="image-prompt"
+                                            value={editingTheme.prompts.imagePrompt}
+                                            onChange={(e) => setEditingTheme({
+                                                ...editingTheme,
+                                                prompts: { ...editingTheme.prompts, imagePrompt: e.target.value }
+                                            })}
+                                            placeholder="Describe the style for AI-generated images..."
+                                            rows={3}
+                                        />
+                                        <p className="text-xs text-gray-600 mt-1">
+                                            This prompt will be used to generate images that match your theme's style
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <Label htmlFor="content-style">Content Style Prompt</Label>
+                                        <Textarea
+                                            id="content-style"
+                                            value={editingTheme.prompts.contentStyle}
+                                            onChange={(e) => setEditingTheme({
+                                                ...editingTheme,
+                                                prompts: { ...editingTheme.prompts, contentStyle: e.target.value }
+                                            })}
+                                            placeholder="Describe the writing style for content..."
+                                            rows={3}
+                                        />
+                                        <p className="text-xs text-gray-600 mt-1">
+                                            This prompt will influence how content is written for your theme
+                                        </p>
+                                    </div>
+
+                                    <div>
+                                        <Label htmlFor="slide-structure">Slide Structure Prompt</Label>
+                                        <Textarea
+                                            id="slide-structure"
+                                            value={editingTheme.prompts.slideStructure}
+                                            onChange={(e) => setEditingTheme({
+                                                ...editingTheme,
+                                                prompts: { ...editingTheme.prompts, slideStructure: e.target.value }
+                                            })}
+                                            placeholder="Describe the layout and structure preferences..."
+                                            rows={3}
+                                        />
+                                        <p className="text-xs text-gray-600 mt-1">
+                                            This prompt will guide how slides are structured and laid out
+                                        </p>
+                                    </div>
+                                </TabsContent>
+                            </Tabs>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 p-6 border-t">
+                            <Button
+                                variant="outline"
+                                onClick={() => {
+                                    setShowThemeCreator(false);
+                                    setEditingTheme(null);
+                                }}
+                            >
+                                Cancel
+                            </Button>
+                            <Button
+                                onClick={() => saveTheme(editingTheme)}
+                                className="bg-blue-600 hover:bg-blue-700 text-white"
+                            >
+                                <Save className="w-4 h-4 mr-2" />
+                                Save Theme
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

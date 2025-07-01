@@ -75,6 +75,55 @@ const Header = ({
     if (value === "custom") {
       setShowCustomThemeModal(true);
       return;
+    } else if (value.startsWith("custom_")) {
+      // Handle custom theme
+      const customThemeId = value.replace("custom_", "");
+      const savedThemes = localStorage.getItem('customThemes');
+      if (savedThemes) {
+        try {
+          const themes = JSON.parse(savedThemes);
+          const customTheme = themes.find((t: any) => t.id === customThemeId);
+          if (customTheme) {
+            const themeColors = {
+              background: customTheme.colors.background,
+              slideBg: customTheme.colors.slideBg,
+              slideTitle: customTheme.colors.slideTitle,
+              slideHeading: customTheme.colors.slideHeading,
+              slideDescription: customTheme.colors.slideDescription,
+              slideBox: customTheme.colors.slideBox,
+              iconBg: customTheme.colors.iconBg,
+              chartColors: customTheme.colors.chartColors,
+              fontFamily: customTheme.font.family,
+            };
+
+            // Update UI
+            dispatch(setTheme("custom" as ThemeType));
+            dispatch(setThemeColors({ ...themeColors, theme: "custom" as ThemeType }));
+            
+            // Set CSS variables
+            const root = document.documentElement;
+            root.style.setProperty(`--custom-slide-bg`, themeColors.slideBg);
+            root.style.setProperty(`--custom-slide-title`, themeColors.slideTitle);
+            root.style.setProperty(`--custom-slide-heading`, themeColors.slideHeading);
+            root.style.setProperty(`--custom-slide-description`, themeColors.slideDescription);
+            root.style.setProperty(`--custom-slide-box`, themeColors.slideBox);
+
+            // Save in background
+            await PresentationGenerationApi.setThemeColors(presentation_id, {
+              name: "custom",
+              colors: themeColors,
+            });
+          }
+        } catch (error) {
+          console.error("Failed to load custom theme:", error);
+          toast({
+            title: "Error loading custom theme",
+            description: "Failed to load the custom theme. Please try again.",
+            variant: "destructive",
+          });
+        }
+      }
+      return;
     } else {
       const themeType = value as ThemeType;
       const themeColors = serverColors[themeType] || defaultColors[themeType];

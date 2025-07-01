@@ -1,4 +1,34 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
+
+interface CustomTheme {
+  id: string;
+  name: string;
+  colors: {
+    background: string;
+    slideBg: string;
+    slideTitle: string;
+    slideHeading: string;
+    slideDescription: string;
+    slideBox: string;
+    iconBg: string;
+    chartColors: string[];
+  };
+  font: {
+    family: string;
+    size: number;
+    weight: number;
+  };
+  layouts: {
+    enabled: number[];
+    custom: any[];
+  };
+  prompts: {
+    imagePrompt: string;
+    contentStyle: string;
+    slideStructure: string;
+  };
+  isActive: boolean;
+}
 
 const ThemeSelector = ({
   onSelect,
@@ -7,6 +37,45 @@ const ThemeSelector = ({
   onSelect: (theme: string) => void;
   selectedTheme: string;
 }) => {
+  const [customThemes, setCustomThemes] = useState<CustomTheme[]>([]);
+
+  const loadCustomThemes = () => {
+    const savedThemes = localStorage.getItem('customThemes');
+    if (savedThemes) {
+      try {
+        const themes = JSON.parse(savedThemes);
+        setCustomThemes(themes);
+      } catch (error) {
+        console.error('Error loading custom themes:', error);
+      }
+    }
+  };
+
+  useEffect(() => {
+    loadCustomThemes();
+    
+    // Listen for storage changes to update themes when new ones are created
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'customThemes') {
+        loadCustomThemes();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also listen for custom events (for same-tab updates)
+    const handleCustomThemesUpdate = () => {
+      loadCustomThemes();
+    };
+    
+    window.addEventListener('customThemesUpdated', handleCustomThemesUpdate);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('customThemesUpdated', handleCustomThemesUpdate);
+    };
+  }, []);
+
   return (
     <div className="grid grid-cols-2 gap-3 p-3">
       <button
@@ -80,6 +149,21 @@ const ThemeSelector = ({
         />
       </button>
 
+      {/* Custom Themes */}
+      {customThemes.map((theme) => (
+        <button
+          key={theme.id}
+          onClick={() => onSelect(`custom_${theme.id}`)}
+          className="group focus:outline-none"
+        >
+          <ThemePreview
+            theme={theme.name}
+            color={theme.colors.slideBg}
+            isSelected={selectedTheme === `custom_${theme.id}`}
+          />
+        </button>
+      ))}
+
       <button
         onClick={() => onSelect("custom")}
         className="group focus:outline-none"
@@ -105,7 +189,7 @@ const ThemeSelector = ({
               selectedTheme === "custom" ? "text-[#5146E5]" : "text-gray-600"
             }`}
           >
-            Custom
+            Create Custom
           </span>
         </div>
       </button>

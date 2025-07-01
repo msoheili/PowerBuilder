@@ -1,3 +1,4 @@
+"use client";
 from datetime import datetime
 from typing import List, Optional
 import uuid
@@ -58,3 +59,15 @@ class KeyValueSqlModel(SQLModel, table=True):
 class PreferencesSqlModel(SQLModel, table=True):
     id: int = Field(default=0, primary_key=True)
     theme: Optional[dict] = Field(sa_column=Column(JSON, nullable=True), default=None)
+
+
+class CustomTemplateSqlModel(SQLModel, table=True):
+    id: str = Field(default_factory=get_random_uuid, primary_key=True)
+    name: str
+    description: Optional[str] = None
+    # Store the template as JSON or YAML string
+    template: str
+    # Optionally, store the format (json/yaml)
+    format: str = Field(default="json")
+    created_at: datetime = Field(default=datetime.now())
+    updated_at: datetime = Field(default=datetime.now())

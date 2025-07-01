@@ -11,6 +11,36 @@ import { Button } from "@/components/ui/button";
 
 import { toast } from "@/hooks/use-toast";
 
+interface CustomTheme {
+  id: string;
+  name: string;
+  colors: {
+    background: string;
+    slideBg: string;
+    slideTitle: string;
+    slideHeading: string;
+    slideDescription: string;
+    slideBox: string;
+    iconBg: string;
+    chartColors: string[];
+  };
+  font: {
+    family: string;
+    size: number;
+    weight: number;
+  };
+  layouts: {
+    enabled: number[];
+    custom: any[];
+  };
+  prompts: {
+    imagePrompt: string;
+    contentStyle: string;
+    slideStructure: string;
+  };
+  isActive: boolean;
+}
+
 interface ThemeCardProps {
   name: string;
   font: string;
@@ -64,14 +94,15 @@ const ThemeCard = ({
 };
 
 const ThemePage = () => {
-  const themes = [
+  const [customThemes, setCustomThemes] = useState<CustomTheme[]>([]);
+  
+  const builtInThemes = [
     {
       name: "Dark Theme",
       colors: defaultColors.dark,
       type: "dark",
       font: "var(--font-inter)",
     },
-
     {
       name: "Royal Blue Theme",
       colors: defaultColors.royal_blue,
@@ -102,7 +133,6 @@ const ThemePage = () => {
       type: "light",
       font: "var(--font-inter)",
     },
-
     {
       name: "Faint Yellow Theme",
       colors: defaultColors.faint_yellow,
@@ -110,12 +140,69 @@ const ThemePage = () => {
       font: "var(--font-inter)",
     },
   ];
+
+  // Load custom themes from localStorage
+  useEffect(() => {
+    const loadCustomThemes = () => {
+      const savedThemes = localStorage.getItem('customThemes');
+      if (savedThemes) {
+        try {
+          const themes = JSON.parse(savedThemes);
+          setCustomThemes(themes);
+        } catch (error) {
+          console.error('Error loading custom themes:', error);
+        }
+      }
+    };
+
+    loadCustomThemes();
+    
+    // Listen for storage changes to update themes when new ones are created
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'customThemes') {
+        loadCustomThemes();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Also listen for custom events (for same-tab updates)
+    const handleCustomThemesUpdate = () => {
+      loadCustomThemes();
+    };
+    
+    window.addEventListener('customThemesUpdated', handleCustomThemesUpdate);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('customThemesUpdated', handleCustomThemesUpdate);
+    };
+  }, []);
+
   const dispatch = useDispatch();
   const router = useRouter();
   const [selectedTheme, setSelectedTheme] = useState<ThemeType | null>(null);
+  
   const handleThemeClick = async (theme: ThemeColors, type: string) => {
     setSelectedTheme(type as ThemeType);
   };
+
+  const handleCustomThemeClick = async (customTheme: CustomTheme) => {
+    const themeColors = {
+      background: customTheme.colors.background,
+      slideBg: customTheme.colors.slideBg,
+      slideTitle: customTheme.colors.slideTitle,
+      slideHeading: customTheme.colors.slideHeading,
+      slideDescription: customTheme.colors.slideDescription,
+      slideBox: customTheme.colors.slideBox,
+      iconBg: customTheme.colors.iconBg,
+      chartColors: customTheme.colors.chartColors,
+      fontFamily: customTheme.font.family,
+    };
+    
+    setSelectedTheme(`custom_${customTheme.id}` as any);
+  };
+
   const handleSubmit = () => {
     if (!selectedTheme) {
       toast({
@@ -124,7 +211,28 @@ const ThemePage = () => {
       });
       return;
     }
-    dispatch(setTheme(selectedTheme as ThemeType));
+
+    if (selectedTheme.toString().startsWith('custom_')) {
+      // Handle custom theme
+      const customThemeId = selectedTheme.toString().replace('custom_', '');
+      const customTheme = customThemes.find(t => t.id === customThemeId);
+      if (customTheme) {
+        const themeColors = {
+          background: customTheme.colors.background,
+          slideBg: customTheme.colors.slideBg,
+          slideTitle: customTheme.colors.slideTitle,
+          slideHeading: customTheme.colors.slideHeading,
+          slideDescription: customTheme.colors.slideDescription,
+          slideBox: customTheme.colors.slideBox,
+          iconBg: customTheme.colors.iconBg,
+          chartColors: customTheme.colors.chartColors,
+          fontFamily: customTheme.font.family,
+        };
+        dispatch(setTheme("custom" as ThemeType));
+      }
+    } else {
+      dispatch(setTheme(selectedTheme as ThemeType));
+    }
 
     router.push("/create");
   };
@@ -134,18 +242,53 @@ const ThemePage = () => {
       <Header />
       <Wrapper className="py-8 md:w-[90%] xl:w-[70%]">
         <h1 className="text-3xl font-bold mb-8">Select a Theme</h1>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-16">
-          {themes.map((theme, index) => (
-            <ThemeCard
-              key={index}
-              name={theme.name}
-              font={theme.font}
-              colors={theme.colors}
-              selected={selectedTheme === theme.type}
-              onClick={() => handleThemeClick(theme.colors, theme.type)}
-            />
-          ))}
+        
+        {/* Built-in Themes */}
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold mb-4">Built-in Themes</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {builtInThemes.map((theme, index) => (
+              <ThemeCard
+                key={index}
+                name={theme.name}
+                font={theme.font}
+                colors={theme.colors}
+                selected={selectedTheme === theme.type}
+                onClick={() => handleThemeClick(theme.colors, theme.type)}
+              />
+            ))}
+          </div>
         </div>
+
+        {/* Custom Themes */}
+        {customThemes.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold mb-4">Custom Themes</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {customThemes.map((theme) => (
+                <ThemeCard
+                  key={theme.id}
+                  name={theme.name}
+                  font={theme.font.family}
+                  colors={{
+                    background: theme.colors.background,
+                    slideBg: theme.colors.slideBg,
+                    slideTitle: theme.colors.slideTitle,
+                    slideHeading: theme.colors.slideHeading,
+                    slideDescription: theme.colors.slideDescription,
+                    slideBox: theme.colors.slideBox,
+                    iconBg: theme.colors.iconBg,
+                    chartColors: theme.colors.chartColors,
+                    fontFamily: theme.font.family,
+                  }}
+                  selected={selectedTheme === `custom_${theme.id}`}
+                  onClick={() => handleCustomThemeClick(theme)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         <Button
           onClick={handleSubmit}
           className="bg-[#5146E5] fixed bottom-4 left-0 right-0 max-w-[1100px] mx-auto w-full rounded-[32px] text-base sm:text-lg py-4 sm:py-6 transition-all duration-300 font-switzer font-semibold hover:bg-[#5146E5]/80 text-white mt-4"

@@ -20,6 +20,25 @@ interface SlideContent {
   infographics?: any;
   image_prompts?: string[];
   icon_queries?: Array<{ queries: string[] }>;
+  customLayout?: {
+    custom: Array<{
+      id: string;
+      name: string;
+      type: string;
+      structure: {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        content?: string;
+        items?: string[];
+        src?: string;
+        chartType?: string;
+        [key: string]: any;
+      };
+      preview: string;
+    }>;
+  };
 }
 
 export interface Slide {

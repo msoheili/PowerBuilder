@@ -140,6 +140,20 @@ const LayoutPreview = ({ type }: { type: string }) => {
                     </div>
                 </div>
             )
+        case 'type10':
+            return (
+                <div className="w-full h-[120px] bg-white p-3 relative">
+                    <div className="w-full h-full flex items-center justify-center">
+                        <div className="text-center">
+                            <div className="text-sm font-medium mb-1">Dynamic Layout</div>
+                            <div className="text-xs text-gray-500">Custom elements</div>
+                        </div>
+                    </div>
+                    <div className="absolute top-2 right-2 w-3 h-3 bg-blue-500 rounded-full"></div>
+                    <div className="absolute bottom-2 left-2 w-2 h-2 bg-green-500 rounded-full"></div>
+                    <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-purple-500 rounded-full"></div>
+                </div>
+            )
 
         default:
             return null
@@ -155,7 +169,7 @@ const NewSlide = ({ onSelectLayout, setShowNewSlideSelection }: NewSlideProps) =
                 <Trash2 onClick={() => setShowNewSlideSelection(false)} className='text-gray-500 text-2xl cursor-pointer' />
             </div>
             <div className='grid grid-cols-4 gap-4'>
-                {['type1', 'type2', 'type4', 'type5', 'type6', 'type7', 'type8', 'type9'].map((type) => (
+                {['type1', 'type2', 'type4', 'type5', 'type6', 'type7', 'type8', 'type9', 'type10'].map((type) => (
                     <div
                         key={type}
                         className="transform hover:scale-105 transition-transform cursor-pointer"

@@ -1,6 +1,7 @@
 from typing import Annotated, List, Optional
 import uuid
 from fastapi import APIRouter, BackgroundTasks, Body, File, Form, UploadFile
+from datetime import datetime
 
 from api.models import SessionModel
 from api.request_utils import RequestUtils
@@ -79,10 +80,15 @@ from api.routers.presentation.models import (
     SearchImageRequest,
     UpdatePresentationThemeRequest,
     PresentationUpdateRequest,
+    CustomTemplateCreate,
+    CustomTemplateUpdate,
+    CustomTemplateRead,
 )
-from api.sql_models import PresentationSqlModel
+from api.sql_models import PresentationSqlModel, CustomTemplateSqlModel
 from api.utils.utils import handle_errors
 from ppt_generator.models.slide_model import SlideModel
+from sqlmodel import select
+from api.services.database import get_sql_session
 
 route_prefix = "/api/v1/ppt"
 presentation_router = APIRouter(prefix=route_prefix)
@@ -386,3 +392,55 @@ async def pull_ollama_model(name: str, background_tasks: BackgroundTasks):
         log_metadata,
         background_tasks=background_tasks,
     )
+
+
+@presentation_router.get("/custom-templates", response_model=List[CustomTemplateRead])
+async def list_custom_templates():
+    with get_sql_session() as session:
+        templates = session.exec(select(CustomTemplateSqlModel)).all()
+        return [CustomTemplateRead(**template.__dict__) for template in templates]
+
+
+@presentation_router.get("/custom-templates/{template_id}", response_model=CustomTemplateRead)
+async def get_custom_template(template_id: str):
+    with get_sql_session() as session:
+        template = session.get(CustomTemplateSqlModel, template_id)
+        if not template:
+            raise Exception("Template not found")
+        return CustomTemplateRead(**template.__dict__)
+
+
+@presentation_router.post("/custom-templates", response_model=CustomTemplateRead)
+async def create_custom_template(data: CustomTemplateCreate):
+    with get_sql_session() as session:
+        template = CustomTemplateSqlModel(**data.dict())
+        session.add(template)
+        session.commit()
+        session.refresh(template)
+        return CustomTemplateRead(**template.__dict__)
+
+
+@presentation_router.put("/custom-templates/{template_id}", response_model=CustomTemplateRead)
+async def update_custom_template(template_id: str, data: CustomTemplateUpdate):
+    with get_sql_session() as session:
+        template = session.get(CustomTemplateSqlModel, template_id)
+        if not template:
+            raise Exception("Template not found")
+        for key, value in data.dict(exclude_unset=True).items():
+            setattr(template, key, value)
+        template.updated_at = datetime.now()
+        session.add(template)
+        session.commit()
+        session.refresh(template)
+        return CustomTemplateRead(**template.__dict__)
+
+
+@presentation_router.delete("/custom-templates/{template_id}", status_code=204)
+async def delete_custom_template(template_id: str):
+    with get_sql_session() as session:
+        template = session.get(CustomTemplateSqlModel, template_id)
+        if not template:
+            raise Exception("Template not found")
+        session.delete(template)
+        session.commit()
+        return None

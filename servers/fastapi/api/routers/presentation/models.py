@@ -177,3 +177,27 @@ class OllamaModelStatusResponse(BaseModel):
 
 class OllamaSupportedModelsResponse(BaseModel):
     models: List[OllamaModelMetadata]
+
+
+class CustomTemplateBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    template: str
+    format: str = "json"
+
+
+class CustomTemplateCreate(CustomTemplateBase):
+    pass
+
+
+class CustomTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    template: Optional[str] = None
+    format: Optional[str] = None
+
+
+class CustomTemplateRead(CustomTemplateBase):
+    id: str
+    created_at: datetime
+    updated_at: datetime

@@ -1,3 +1,4 @@
+import React from "react";
 import { Slide } from "../types/slide";
 import Type1Mini from "./mini-slides/Type1Mini";
 import Type4Mini from "./mini-slides/Type4Mini";
@@ -10,11 +11,13 @@ import Type6Layout from "./slide_layouts/Type6Layout";
 import Type7Layout from "./slide_layouts/Type7Layout";
 import Type8Layout from "./slide_layouts/Type8Layout";
 import Type9Layout from "./slide_layouts/Type9Layout";
+import DynamicLayout from "./slide_layouts/DynamicLayout";
 import Type7Mini from "./mini-slides/Type7Mini";
 import Type6Mini from "./mini-slides/Type6Mini";
 import Type5Mini from "./mini-slides/Type5Mini";
 import Type9Mini from "./mini-slides/Type9Mini";
 import Type8Mini from "./mini-slides/Type8Mini";
+import DynamicMini from "./mini-slides/DynamicMini";
 
 import { Chart, ChartSettings } from "@/store/slices/presentationGeneration";
 
@@ -148,6 +151,24 @@ export const renderSlideContent = (slide: Slide, language: string) => {
         />
       );
 
+    case 10: // Dynamic Layout
+      return (
+        <DynamicLayout
+          title={slide.content.title}
+          description={
+            typeof slide.content.body === "string"
+              ? slide.content.body
+              : slide.content.body[0]?.description || ""
+          }
+          slideId={slide.id}
+          slideIndex={slide.index}
+          customLayout={slide.content.customLayout}
+          images={slide.images || []}
+          image_prompts={slide.content.image_prompts || []}
+          properties={slide.properties}
+          graphData={slide.content.graph}
+        />
+      );
 
     default:
       return null;
@@ -232,6 +253,14 @@ export const renderMiniSlideContent = (slide: Slide) => {
           body={slide.content.body}
           chartData={slide.content.graph!}
           slideIndex={slide.index}
+        />
+      );
+
+    case 10: // Dynamic Layout
+      return (
+        <DynamicMini
+          title={slide.content.title}
+          customLayout={slide.content.customLayout}
         />
       );
 
