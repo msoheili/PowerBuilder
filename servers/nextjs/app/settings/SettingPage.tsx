@@ -1,8 +1,8 @@
 'use client';
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Header from "../dashboard/components/Header";
 import Wrapper from "@/components/Wrapper";
-import { Settings, Key, Loader2, Palette, Type, Layout, MessageSquare, Plus, Trash2, Save } from 'lucide-react';
+import { Settings, Key, Loader2, Palette, Type, Layout, MessageSquare, Plus, Trash2, Save, Upload, Download } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { RootState } from "@/store/store";
 import { useSelector } from "react-redux";
@@ -93,6 +93,14 @@ interface CustomTheme {
         slideStructure: string;
     };
     isActive: boolean;
+    selectedPage?: string;
+    pages?: {
+        [key: string]: {
+            name: string;
+            elements: CustomLayout[];
+            description?: string;
+        };
+    };
 }
 
 interface CustomLayout {
@@ -108,9 +116,24 @@ interface CustomLayout {
         items?: string[];
         src?: string;
         chartType?: string;
+        prompt?: string;
+        font?: string;
+        fontSize?: number;
+        textColor?: string;
+        alignment?: string;
+        bulletType?: string;
+        lineSpacing?: number;
         [key: string]: any;
     };
     preview: string;
+    style?: {
+        font?: string;
+        fontSize?: number;
+        textColor?: string;
+        alignment?: string;
+        bulletType?: string;
+    };
+    prompt?: string;
 }
 
 const AVAILABLE_FONTS = [
@@ -161,6 +184,24 @@ const SettingsPage = () => {
     const [activeThemeTab, setActiveThemeTab] = useState<string>("general");
     const [editingTheme, setEditingTheme] = useState<CustomTheme | null>(null);
     const [showThemeCreator, setShowThemeCreator] = useState(false);
+    const [importingTheme, setImportingTheme] = useState(false);
+
+    // Drag and resize state
+    const [draggingElement, setDraggingElement] = useState<CustomLayout | null>(null);
+    const [resizingElement, setResizingElement] = useState<CustomLayout | null>(null);
+    const [resizeDirection, setResizeDirection] = useState<string>('');
+    const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+    const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number }>({ x: 0, y: 0, width: 0, height: 0 });
+    
+    // Add refs to track drag/resize state more reliably
+    const isDraggingRef = useRef(false);
+    const isResizingRef = useRef(false);
+    const dragTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const currentDraggingElementRef = useRef<CustomLayout | null>(null);
+    const currentResizingElementRef = useRef<CustomLayout | null>(null);
+    const currentResizeDirectionRef = useRef<string>('');
+    const dragStartRef = useRef({ x: 0, y: 0 });
+    const elementStartPosRef = useRef({ x: 0, y: 0 });
 
     const api_key_changed = (apiKey: string, type: 'text' | 'image', provider: string) => {
         if (type === 'text') {
@@ -378,7 +419,16 @@ const SettingsPage = () => {
                 slideStructure: "Balanced layout with clear visual hierarchy, appropriate spacing, and professional presentation style.",
             },
             isActive: false,
+            selectedPage: 'page1',
+            pages: {
+                page1: { 
+                    name: 'Page 1', 
+                    description: '',
+                    elements: [] 
+                },
+            },
         };
+        console.log('Creating new theme:', newTheme);
         setEditingTheme(newTheme);
         setShowThemeCreator(true);
     };
@@ -425,7 +475,19 @@ const SettingsPage = () => {
     };
 
     const editTheme = (theme: CustomTheme) => {
-        setEditingTheme(theme);
+        // Ensure the theme has the new properties initialized
+        const themeWithDefaults = {
+            ...theme,
+            selectedPage: theme.selectedPage || 'page1',
+            pages: theme.pages || { 
+                page1: { 
+                    name: 'Page 1', 
+                    description: '',
+                    elements: [] 
+                } 
+            }
+        };
+        setEditingTheme(themeWithDefaults);
         setShowThemeCreator(true);
     };
 
@@ -539,6 +601,400 @@ const SettingsPage = () => {
         });
     };
 
+    const addElementToPage = (type: string, name: string) => {
+        if (!editingTheme) return;
+        if (!editingTheme.pages || !editingTheme.pages[editingTheme.selectedPage || 'page1']) {
+            return;
+        }
+
+        const newElement: CustomLayout = {
+            id: `element_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            name: name,
+            type: type,
+            structure: {
+                x: 10, // Default to 10% from left
+                y: 10, // Default to 10% from top
+                width: 30, // Default to 30% of container width
+                height: 20, // Default to 20% of container height
+                content: '',
+                items: [],
+                src: '',
+                chartType: 'bar'
+            },
+            preview: ''
+        };
+
+        setEditingTheme({
+            ...editingTheme,
+            id: editingTheme.id,
+            pages: {
+                ...editingTheme.pages,
+                [editingTheme.selectedPage || 'page1']: {
+                    ...editingTheme.pages[editingTheme.selectedPage || 'page1'],
+                    elements: [...editingTheme.pages[editingTheme.selectedPage || 'page1'].elements, newElement]
+                }
+            }
+        });
+    };
+
+    const removeElementFromPage = (elementId: string) => {
+        if (!editingTheme) return;
+        if (!editingTheme.pages || !editingTheme.pages[editingTheme.selectedPage || 'page1']) {
+            return;
+        }
+
+        setEditingTheme({
+            ...editingTheme,
+            id: editingTheme.id,
+            pages: {
+                ...editingTheme.pages,
+                [editingTheme.selectedPage || 'page1']: {
+                    ...editingTheme.pages[editingTheme.selectedPage || 'page1'],
+                    elements: editingTheme.pages[editingTheme.selectedPage || 'page1'].elements.filter(element => element.id !== elementId)
+                }
+            }
+        });
+    };
+
+    const updateElementPropertyInPage = (elementId: string, property: string, value: any) => {
+        if (!editingTheme) return;
+        if (!editingTheme.pages || !editingTheme.pages[editingTheme.selectedPage || 'page1']) {
+            return;
+        }
+
+        console.log('Updating element property:', { elementId, property, value });
+
+        setEditingTheme({
+            ...editingTheme,
+            id: editingTheme.id,
+            pages: {
+                ...editingTheme.pages,
+                [editingTheme.selectedPage || 'page1']: {
+                    ...editingTheme.pages[editingTheme.selectedPage || 'page1'],
+                    elements: (editingTheme.pages[editingTheme.selectedPage || 'page1'].elements || []).filter(Boolean).map(element => {
+                        if (element.id === elementId) {
+                            console.log('Found element to update:', element.name, 'old value:', element.structure?.[property], 'new value:', value);
+                            return {
+                                ...element,
+                                structure: {
+                                    ...element.structure,
+                                    [property]: value
+                                }
+                            };
+                        }
+                        return element;
+                    })
+                }
+            }
+        });
+    };
+
+    // Mouse event handlers for drag and resize
+    const handleElementMouseDown = (e: React.MouseEvent, element: CustomLayout) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        console.log('Element mouse down:', element.name, 'at', e.clientX, e.clientY);
+        
+        const container = document.getElementById('layout-preview-container');
+        if (!container) return;
+        
+        const rect = container.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        console.log('Container rect:', rect, 'Mouse position:', { mouseX, mouseY });
+        
+        // Store initial mouse position and element position
+        dragStartRef.current = { 
+            x: mouseX, 
+            y: mouseY 
+        };
+        elementStartPosRef.current = { 
+            x: element.structure?.x || 0, 
+            y: element.structure?.y || 0 
+        };
+        
+        console.log('Initial drag setup:', {
+            mouseX, mouseY,
+            elementX: element.structure?.x || 0,
+            elementY: element.structure?.y || 0,
+            dragStart: dragStartRef.current,
+            elementStart: elementStartPosRef.current
+        });
+        
+        console.log('Drag start refs:', dragStartRef.current, 'Element start:', elementStartPosRef.current);
+        
+        // Set state immediately using refs
+        setDraggingElement(element);
+        setDragStart({ x: mouseX, y: mouseY });
+        isDraggingRef.current = true;
+        currentDraggingElementRef.current = element;
+        
+        console.log('Drag state set:', {
+            isDragging: isDraggingRef.current,
+            element: currentDraggingElementRef.current?.name,
+            dragStart: dragStartRef.current,
+            elementStart: elementStartPosRef.current,
+            elementCurrentX: element.structure?.x,
+            elementCurrentY: element.structure?.y
+        });
+        
+        // Add global mouse event listeners with capture
+        document.addEventListener('mousemove', handleGlobalMouseMove, { capture: true });
+        document.addEventListener('mouseup', handleGlobalMouseUp, { capture: true });
+        
+        // Prevent text selection during drag
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'move';
+        
+        // Clear any existing timeout
+        if (dragTimeoutRef.current) {
+            clearTimeout(dragTimeoutRef.current);
+        }
+        
+        // Add a small delay to prevent immediate mouse up
+        dragTimeoutRef.current = setTimeout(() => {
+            console.log('Drag state confirmed:', element.name);
+        }, 10);
+    };
+
+    const handleResizeMouseDown = (e: React.MouseEvent, element: CustomLayout, direction: string = 'se') => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.nativeEvent.stopImmediatePropagation();
+        
+        console.log('Resize mouse down:', element.name, direction, 'at', e.clientX, e.clientY);
+        
+        const container = document.getElementById('layout-preview-container');
+        if (!container) return;
+        
+        const rect = container.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        console.log('Resize container rect:', rect, 'Mouse position:', { mouseX, mouseY });
+        
+        // Set state immediately using refs
+        setResizingElement(element);
+        setResizeDirection(direction);
+        setResizeStart({ 
+            x: mouseX, 
+            y: mouseY, 
+            width: element.structure?.width || 30, 
+            height: element.structure?.height || 20 
+        });
+        isResizingRef.current = true;
+        currentResizingElementRef.current = element;
+        currentResizeDirectionRef.current = direction;
+        
+        console.log('Resize start refs:', { 
+            isResizing: isResizingRef.current, 
+            element: currentResizingElementRef.current?.name,
+            direction: currentResizeDirectionRef.current,
+            start: { x: mouseX, y: mouseY, width: element.structure?.width || 30, height: element.structure?.height || 20 }
+        });
+        
+        // Add global mouse event listeners with capture
+        document.addEventListener('mousemove', handleGlobalMouseMove, { capture: true });
+        document.addEventListener('mouseup', handleGlobalMouseUp, { capture: true });
+        
+        // Prevent text selection during resize
+        document.body.style.userSelect = 'none';
+        document.body.style.cursor = 'se-resize';
+        
+        // Clear any existing timeout
+        if (dragTimeoutRef.current) {
+            clearTimeout(dragTimeoutRef.current);
+        }
+        
+        // Add a small delay to prevent immediate mouse up
+        dragTimeoutRef.current = setTimeout(() => {
+            console.log('Resize state confirmed:', element.name, direction);
+        }, 10);
+    };
+
+    const handleGlobalMouseMove = (e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        if (!editingTheme) return;
+        
+        const container = document.getElementById('layout-preview-container');
+        if (!container) return;
+        
+        const rect = container.getBoundingClientRect();
+        
+        const currentMouseX = e.clientX - rect.left;
+        const currentMouseY = e.clientY - rect.top;
+        
+        console.log('Mouse move:', { 
+            currentMouseX, 
+            currentMouseY, 
+            clientX: e.clientX,
+            clientY: e.clientY,
+            rectLeft: rect.left,
+            rectTop: rect.top,
+            dragging: isDraggingRef.current, 
+            resizing: isResizingRef.current,
+            draggingElement: currentDraggingElementRef.current?.name,
+            resizingElement: currentResizingElementRef.current?.name,
+            resizeDirection: currentResizeDirectionRef.current
+        });
+        
+        // Handle dragging
+        if (isDraggingRef.current && currentDraggingElementRef.current && !isResizingRef.current) {
+            console.log('DRAG OPERATION DETECTED!');
+            const element = currentDraggingElementRef.current;
+            const deltaX = currentMouseX - dragStartRef.current.x;
+            const deltaY = currentMouseY - dragStartRef.current.y;
+            
+            // Convert pixel deltas to percentage deltas
+            const deltaXPercent = (deltaX / rect.width) * 100;
+            const deltaYPercent = (deltaY / rect.height) * 100;
+            
+            // Calculate new position based on mouse movement
+            const newX = Math.max(0, Math.min(100, 
+                elementStartPosRef.current.x + deltaXPercent));
+            const newY = Math.max(0, Math.min(100, 
+                elementStartPosRef.current.y + deltaYPercent));
+            
+            console.log('Drag calculation:', {
+                deltaX, deltaY,
+                deltaXPercent, deltaYPercent,
+                elementStartX: elementStartPosRef.current.x,
+                elementStartY: elementStartPosRef.current.y,
+                newX, newY,
+                mouseStartX: dragStartRef.current.x,
+                mouseStartY: dragStartRef.current.y,
+                currentMouseX, currentMouseY
+            });
+            
+            console.log('Dragging element:', { 
+                newX, newY, deltaXPercent, deltaYPercent,
+                deltaX, deltaY,
+                startX: elementStartPosRef.current.x,
+                startY: elementStartPosRef.current.y,
+                mouseStartX: dragStartRef.current.x,
+                mouseStartY: dragStartRef.current.y,
+                rectWidth: rect.width,
+                rectHeight: rect.height,
+                currentMouseX,
+                currentMouseY,
+                elementWidth: element.structure?.width,
+                elementHeight: element.structure?.height
+            });
+            
+            // Force update even if values seem the same
+            console.log('Setting element position:', { elementId: element.id, newX, newY, currentElementX: element.structure?.x, currentElementY: element.structure?.y });
+            updateElementPropertyInPage(element.id, 'x', newX);
+            updateElementPropertyInPage(element.id, 'y', newY);
+        }
+        
+        // Handle resizing
+        if (isResizingRef.current && currentResizingElementRef.current) {
+            console.log('RESIZE OPERATION DETECTED!');
+            const element = currentResizingElementRef.current;
+            const direction = currentResizeDirectionRef.current;
+            const resizeDeltaX = currentMouseX - resizeStart.x;
+            const resizeDeltaY = currentMouseY - resizeStart.y;
+            
+            // Convert pixel deltas to percentage deltas
+            const resizeDeltaXPercent = (resizeDeltaX / rect.width) * 100;
+            const resizeDeltaYPercent = (resizeDeltaY / rect.height) * 100;
+            
+            // Get current element dimensions
+            const currentWidth = element.structure?.width || 30;
+            const currentHeight = element.structure?.height || 20;
+            const currentX = element.structure?.x || 0;
+            const currentY = element.structure?.y || 0;
+            
+            let newWidth = currentWidth;
+            let newHeight = currentHeight;
+            let newX = currentX;
+            let newY = currentY;
+            
+            console.log('Resize calculation start:', { 
+                resizeDeltaXPercent, resizeDeltaYPercent, 
+                currentWidth, currentHeight, currentX, currentY,
+                direction: direction
+            });
+            
+            switch (direction) {
+                case 'se': // bottom-right
+                    newWidth = Math.max(10, Math.min(100 - currentX, currentWidth + resizeDeltaXPercent));
+                    newHeight = Math.max(10, Math.min(100 - currentY, currentHeight + resizeDeltaYPercent));
+                    break;
+                case 'ne': // top-right
+                    newWidth = Math.max(10, Math.min(100 - currentX, currentWidth + resizeDeltaXPercent));
+                    newHeight = Math.max(10, Math.min(100, currentHeight - resizeDeltaYPercent));
+                    newY = Math.max(0, Math.min(100 - newHeight, currentY + resizeDeltaYPercent));
+                    break;
+                case 'nw': // top-left
+                    newWidth = Math.max(10, Math.min(100, currentWidth - resizeDeltaXPercent));
+                    newHeight = Math.max(10, Math.min(100, currentHeight - resizeDeltaYPercent));
+                    newX = Math.max(0, Math.min(100 - newWidth, currentX + resizeDeltaXPercent));
+                    newY = Math.max(0, Math.min(100 - newHeight, currentY + resizeDeltaYPercent));
+                    break;
+                case 'sw': // bottom-left
+                    newWidth = Math.max(10, Math.min(100, currentWidth - resizeDeltaXPercent));
+                    newHeight = Math.max(10, Math.min(100 - currentY, currentHeight + resizeDeltaYPercent));
+                    newX = Math.max(0, Math.min(100 - newWidth, currentX + resizeDeltaXPercent));
+                    break;
+            }
+            
+            console.log('Resizing element:', { 
+                newWidth, newHeight, newX, newY, 
+                direction: direction,
+                resizeDeltaXPercent, resizeDeltaYPercent
+            });
+            
+            // Update the element properties
+            updateElementPropertyInPage(element.id, 'width', newWidth);
+            updateElementPropertyInPage(element.id, 'height', newHeight);
+            updateElementPropertyInPage(element.id, 'x', newX);
+            updateElementPropertyInPage(element.id, 'y', newY);
+            
+            // Update resize start for next calculation
+            setResizeStart({ x: currentMouseX, y: currentMouseY, width: newWidth, height: newHeight });
+        }
+    };
+
+    const handleGlobalMouseUp = (e: MouseEvent) => {
+        console.log('Mouse up - clearing drag/resize state', { 
+            wasDragging: isDraggingRef.current, 
+            wasResizing: isResizingRef.current 
+        });
+        
+        // Clear any existing timeout
+        if (dragTimeoutRef.current) {
+            clearTimeout(dragTimeoutRef.current);
+            dragTimeoutRef.current = null;
+        }
+        
+        // Remove global event listeners immediately
+        document.removeEventListener('mousemove', handleGlobalMouseMove, { capture: true });
+        document.removeEventListener('mouseup', handleGlobalMouseUp, { capture: true });
+        
+        // Restore body styles
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+        
+        // Clear refs immediately
+        isDraggingRef.current = false;
+        isResizingRef.current = false;
+        currentDraggingElementRef.current = null;
+        currentResizingElementRef.current = null;
+        currentResizeDirectionRef.current = '';
+        
+        // Clear state immediately
+        setDraggingElement(null);
+        setResizingElement(null);
+        setResizeDirection('');
+    };
+
+
+
     // Load saved themes on component mount
     useEffect(() => {
         const savedThemes = localStorage.getItem('customThemes');
@@ -546,6 +1002,1092 @@ const SettingsPage = () => {
             setCustomThemes(JSON.parse(savedThemes));
         }
     }, []);
+
+    // Cleanup effect
+    useEffect(() => {
+        return () => {
+            // Clean up event listeners
+            document.removeEventListener('mousemove', handleGlobalMouseMove, { capture: true });
+            document.removeEventListener('mouseup', handleGlobalMouseUp, { capture: true });
+            
+            // Clean up timeout
+            if (dragTimeoutRef.current) {
+                clearTimeout(dragTimeoutRef.current);
+            }
+            
+            // Restore body styles
+            document.body.style.userSelect = '';
+            document.body.style.cursor = '';
+        };
+    }, []);
+
+    // YAML import functions
+    const parseYamlTheme = (yamlContent: string): CustomTheme | null => {
+        try {
+            console.log('=== YAML PARSING START ===');
+            console.log('Raw YAML content:', yamlContent);
+            
+            const lines = yamlContent.split('\n');
+            console.log('Total lines in YAML:', lines.length);
+            
+            let theme: any = {
+                name: '',
+                colors: {},
+                fonts: {},
+                defaults: {},
+                pages: {}
+            };
+            
+            let currentPage: any = null;
+            let currentElement: any = null;
+            let inLayout = false;
+            let inStyle = false;
+            let inPosition = false;
+            let inSize = false;
+            
+            console.log('Starting to parse lines...');
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const indent = (line.match(/^\s*/)?.[0]?.length || 0);
+                const trimmedLine = line.trim();
+                
+                console.log(`Line ${i + 1} (indent: ${indent}): "${line}"`);
+                
+                if (trimmedLine === '') {
+                    console.log('  -> Empty line, skipping');
+                    continue;
+                }
+
+                // Check for template section
+                if (trimmedLine === 'template:') {
+                    console.log('  -> Found template section');
+                }
+                // Check for theme name (indent 2)
+                else if (indent === 2 && trimmedLine.startsWith('name:')) {
+                    theme.name = trimmedLine.split('name:')[1].trim().replace(/"/g, '');
+                    console.log('  -> Set theme name:', theme.name);
+                }
+                // Check for theme description (indent 2)
+                else if (indent === 2 && trimmedLine.startsWith('description:')) {
+                    theme.description = trimmedLine.split('description:')[1].trim().replace(/"/g, '');
+                    console.log('  -> Set theme description:', theme.description);
+                }
+                // Check for general_style section (indent 2)
+                else if (indent === 2 && trimmedLine === 'general_style:') {
+                    console.log('  -> Found general_style section');
+                    // Parse general style properties
+                    i++;
+                    while (i < lines.length && lines[i].trim() && ((lines[i].match(/^\s*/)?.[0]?.length || 0) > 2)) {
+                        const styleLine = lines[i].trim();
+                        console.log(`    -> Processing style line: "${styleLine}"`);
+                        
+                        if (styleLine.startsWith('background_color:')) {
+                            theme.colors.background = styleLine.split('background_color:')[1].trim().replace(/"/g, '');
+                            console.log('      -> Set background color:', theme.colors.background);
+                        } else if (styleLine.startsWith('text_color:')) {
+                            theme.colors.slideTitle = styleLine.split('text_color:')[1].trim().replace(/"/g, '');
+                            console.log('      -> Set text color:', theme.colors.slideTitle);
+                        } else if (styleLine === 'fonts:') {
+                            console.log('      -> Found fonts section');
+                            i++;
+                            while (i < lines.length && lines[i].trim() && ((lines[i].match(/^\s*/)?.[0]?.length || 0) > 4)) {
+                                const fontLine = lines[i].trim();
+                                console.log(`        -> Processing font line: "${fontLine}"`);
+                                
+                                if (fontLine.startsWith('title:')) {
+                                    theme.fonts.title = fontLine.split('title:')[1].trim().replace(/"/g, '');
+                                    console.log('          -> Set title font:', theme.fonts.title);
+                                } else if (fontLine.startsWith('subtitle:')) {
+                                    theme.fonts.subtitle = fontLine.split('subtitle:')[1].trim().replace(/"/g, '');
+                                    console.log('          -> Set subtitle font:', theme.fonts.subtitle);
+                                } else if (fontLine.startsWith('heading:')) {
+                                    theme.fonts.heading = fontLine.split('heading:')[1].trim().replace(/"/g, '');
+                                    console.log('          -> Set heading font:', theme.fonts.heading);
+                                } else if (fontLine.startsWith('body:')) {
+                                    theme.fonts.body = fontLine.split('body:')[1].trim().replace(/"/g, '');
+                                    console.log('          -> Set body font:', theme.fonts.body);
+                                } else if (fontLine.startsWith('caption:')) {
+                                    theme.fonts.caption = fontLine.split('caption:')[1].trim().replace(/"/g, '');
+                                    console.log('          -> Set caption font:', theme.fonts.caption);
+                                }
+                                i++;
+                            }
+                            i--;
+                        } else if (styleLine === 'defaults:') {
+                            console.log('      -> Found defaults section');
+                            i++;
+                            while (i < lines.length && lines[i].trim() && ((lines[i].match(/^\s*/)?.[0]?.length || 0) > 4)) {
+                                const defaultLine = lines[i].trim();
+                                console.log(`        -> Processing default line: "${defaultLine}"`);
+                                
+                                if (defaultLine.startsWith('title_font_size:')) {
+                                    theme.defaults.titleFontSize = parseInt(defaultLine.split('title_font_size:')[1].trim());
+                                    console.log('          -> Set title font size:', theme.defaults.titleFontSize);
+                                } else if (defaultLine.startsWith('subtitle_font_size:')) {
+                                    theme.defaults.subtitleFontSize = parseInt(defaultLine.split('subtitle_font_size:')[1].trim());
+                                    console.log('          -> Set subtitle font size:', theme.defaults.subtitleFontSize);
+                                } else if (defaultLine.startsWith('heading_font_size:')) {
+                                    theme.defaults.headingFontSize = parseInt(defaultLine.split('heading_font_size:')[1].trim());
+                                    console.log('          -> Set heading font size:', theme.defaults.headingFontSize);
+                                } else if (defaultLine.startsWith('body_font_size:')) {
+                                    theme.defaults.bodyFontSize = parseInt(defaultLine.split('body_font_size:')[1].trim());
+                                    console.log('          -> Set body font size:', theme.defaults.bodyFontSize);
+                                } else if (defaultLine.startsWith('caption_font_size:')) {
+                                    theme.defaults.captionFontSize = parseInt(defaultLine.split('caption_font_size:')[1].trim());
+                                    console.log('          -> Set caption font size:', theme.defaults.captionFontSize);
+                                } else if (defaultLine.startsWith('text_alignment:')) {
+                                    theme.defaults.textAlignment = defaultLine.split('text_alignment:')[1].trim().replace(/"/g, '');
+                                    console.log('          -> Set text alignment:', theme.defaults.textAlignment);
+                                }
+                                i++;
+                            }
+                            i--;
+                        } else if (styleLine.startsWith('line_spacing:')) {
+                            theme.lineSpacing = parseFloat(styleLine.split('line_spacing:')[1].trim());
+                            console.log('      -> Set line spacing:', theme.lineSpacing);
+                        }
+                        i++;
+                    }
+                    i--;
+                }
+                // Check for page_templates section (indent 2)
+                else if (indent === 2 && trimmedLine === 'page_templates:') {
+                    console.log('  -> Found page_templates section');
+                    // Initialize pages object
+                    theme.pages = {};
+                }
+                // Check for page template start (indent 4, starts with - name:)
+                else if (indent === 4 && trimmedLine.startsWith('- name:')) {
+                    // Start of a page template
+                    console.log('  -> Found page template start');
+                    if (currentPage && currentElement) {
+                        currentPage.elements.push(currentElement);
+                        console.log('    -> Added pending element to page:', currentElement.id, 'Total elements in page now:', currentPage.elements.length);
+                        currentElement = null;
+                    }
+                    if (currentPage) {
+                        const pageKey = `page${Object.keys(theme.pages || {}).length + 1}`;
+                        theme.pages[pageKey] = currentPage;
+                        console.log(`    -> Stored page "${currentPage.name}" with key "${pageKey}"`);
+                    }
+                    const pageName = trimmedLine.split('name:')[1].trim().replace(/"/g, '');
+                    currentPage = {
+                        name: pageName,
+                        elements: []
+                    };
+                    inLayout = false;
+                    inStyle = false;
+                    inPosition = false;
+                    inSize = false;
+                    console.log('    -> Started new page:', pageName);
+                }
+                // Check for page description (indent 6)
+                else if (indent === 6 && trimmedLine.startsWith('description:')) {
+                    if (currentPage) {
+                        currentPage.description = trimmedLine.split('description:')[1].trim().replace(/"/g, '');
+                        console.log('    -> Set page description:', currentPage.description);
+                    }
+                }
+                // Check for layout section (indent 6)
+                else if (indent === 6 && trimmedLine === 'layout:') {
+                    inLayout = true;
+                    console.log('    -> Started layout section for page:', currentPage?.name);
+                }
+                // Check for layout element start (indent 8, starts with - id:)
+                else if (indent === 8 && trimmedLine.startsWith('- id:') && inLayout) {
+                    // Start of a layout element
+                    if (currentElement && currentPage) {
+                        currentPage.elements.push(currentElement);
+                        console.log('    -> Added pending element to page:', currentElement.id, 'Total elements in page now:', currentPage.elements.length);
+                        currentElement = null;
+                    }
+                    const elementId = trimmedLine.split('id:')[1].trim().replace(/"/g, '');
+                    currentElement = {
+                        id: elementId,
+                        structure: {},
+                        style: {},
+                        prompt: ''
+                    };
+                    inStyle = false;
+                    inPosition = false;
+                    inSize = false;
+                    console.log('    -> Started new element:', elementId, 'for page:', currentPage?.name);
+                }
+                // Check for element type (indent 10)
+                else if (indent === 10 && trimmedLine.startsWith('type:')) {
+                    if (currentElement) {
+                        currentElement.type = trimmedLine.split('type:')[1].trim().replace(/"/g, '');
+                        console.log('      -> Element type:', currentElement.type);
+                    }
+                }
+                // Check for position section (indent 10)
+                else if (indent === 10 && trimmedLine === 'position:') {
+                    inPosition = true;
+                    inSize = false;
+                    inStyle = false;
+                }
+                // Check for position coordinates (indent 12)
+                else if (inPosition && indent === 12) {
+                    if (trimmedLine.startsWith('x:') && currentElement) {
+                        currentElement.structure.x = parseInt(trimmedLine.split('x:')[1].trim());
+                    } else if (trimmedLine.startsWith('y:') && currentElement) {
+                        currentElement.structure.y = parseInt(trimmedLine.split('y:')[1].trim());
+                    }
+                }
+                // Check for size section (indent 10)
+                else if (indent === 10 && trimmedLine === 'size:') {
+                    inSize = true;
+                    inPosition = false;
+                    inStyle = false;
+                }
+                // Check for size dimensions (indent 12)
+                else if (inSize && indent === 12) {
+                    if (trimmedLine.startsWith('width:') && currentElement) {
+                        currentElement.structure.width = parseInt(trimmedLine.split('width:')[1].trim());
+                    } else if (trimmedLine.startsWith('height:') && currentElement) {
+                        currentElement.structure.height = parseInt(trimmedLine.split('height:')[1].trim());
+                    }
+                }
+                // Check for style section (indent 10)
+                else if (indent === 10 && trimmedLine === 'style:') {
+                    inStyle = true;
+                    inPosition = false;
+                    inSize = false;
+                }
+                // Check for style properties (indent 12)
+                else if (inStyle && indent === 12) {
+                    // Parse element style properties
+                    if (trimmedLine.startsWith('font:') && currentElement) {
+                        currentElement.style.font = trimmedLine.split('font:')[1].trim().replace(/"/g, '');
+                    } else if (trimmedLine.startsWith('font_size:') && currentElement) {
+                        currentElement.style.fontSize = parseInt(trimmedLine.split('font_size:')[1].trim());
+                    } else if (trimmedLine.startsWith('text_color:') && currentElement) {
+                        currentElement.style.textColor = trimmedLine.split('text_color:')[1].trim().replace(/"/g, '');
+                    } else if (trimmedLine.startsWith('alignment:') && currentElement) {
+                        currentElement.style.alignment = trimmedLine.split('alignment:')[1].trim().replace(/"/g, '');
+                    } else if (trimmedLine.startsWith('bullet_type:') && currentElement) {
+                        currentElement.style.bulletType = trimmedLine.split('bullet_type:')[1].trim().replace(/"/g, '');
+                    }
+                }
+                // Check for placeholder text (indent 10)
+                else if (indent === 10 && trimmedLine.startsWith('placeholder_text:')) {
+                    // Handle multi-line placeholder text
+                    let placeholderText = trimmedLine.split('placeholder_text:')[1].trim().replace(/"/g, '');
+                    if (placeholderText === '|') {
+                        // Multi-line text
+                        i++;
+                        placeholderText = '';
+                        while (i < lines.length && lines[i].trim() && ((lines[i].match(/^\s*/)?.[0]?.length || 0) > 10)) {
+                            placeholderText += lines[i].trim() + '\n';
+                            i++;
+                        }
+                        i--;
+                        placeholderText = placeholderText.trim();
+                    }
+                    if (currentElement) {
+                        currentElement.structure.content = placeholderText;
+                        console.log('      -> Set placeholder text:', placeholderText);
+                    }
+                }
+                // Check for placeholder image URL (indent 10)
+                else if (indent === 10 && trimmedLine.startsWith('placeholder_image_url:')) {
+                    if (currentElement) {
+                        currentElement.structure.src = trimmedLine.split('placeholder_image_url:')[1].trim().replace(/"/g, '');
+                    }
+                }
+                // Check for prompt (indent 10)
+                else if (indent === 10 && trimmedLine.startsWith('prompt:')) {
+                    // Handle multi-line prompts
+                    let prompt = trimmedLine.split('prompt:')[1].trim().replace(/"/g, '');
+                    if (prompt === '|') {
+                        // Multi-line prompt
+                        i++;
+                        prompt = '';
+                        while (i < lines.length && lines[i].trim() && ((lines[i].match(/^\s*/)?.[0]?.length || 0) > 10)) {
+                            prompt += lines[i].trim() + '\n';
+                            i++;
+                        }
+                        i--;
+                        prompt = prompt.trim();
+                    }
+                    if (currentElement) {
+                        currentElement.prompt = prompt;
+                    }
+                }
+                else {
+                    // Debug: show what lines are not being matched
+                    if (trimmedLine.includes('name:') || trimmedLine.includes('page_templates:') || trimmedLine.includes('layout:') || trimmedLine.includes('- id:')) {
+                        console.log(`  -> DEBUG: Unmatched line "${line}" with indent ${indent}`);
+                    }
+                }
+            }
+            
+            // Add the last page and element
+            if (currentElement && currentPage) {
+                currentPage.elements.push(currentElement);
+                console.log('Added final element to page:', currentElement.id, 'Total elements in page now:', currentPage.elements.length);
+            }
+            if (currentPage) {
+                const pageKey = `page${Object.keys(theme.pages || {}).length + 1}`;
+                theme.pages[pageKey] = currentPage;
+                console.log('Added final page:', currentPage.name, 'with', currentPage.elements.length, 'elements');
+            }
+            
+            console.log('Parsed theme:', theme);
+            console.log('Available pages after parsing:', Object.keys(theme.pages || {}).map(key => ({
+                key,
+                name: theme.pages[key].name,
+                elementCount: theme.pages[key].elements.length,
+                elementIds: theme.pages[key].elements.map((el: any) => el.id)
+            })));
+            
+            console.log('=== YAML PARSING SUMMARY ===');
+            console.log('Theme name:', theme.name);
+            console.log('Theme description:', theme.description);
+            console.log('Colors found:', theme.colors);
+            console.log('Fonts found:', theme.fonts);
+            console.log('Defaults found:', theme.defaults);
+            console.log('Pages found:', Object.keys(theme.pages || {}).length);
+            console.log('Page details:', Object.keys(theme.pages || {}).map(key => ({
+                key,
+                name: theme.pages[key].name,
+                description: theme.pages[key].description,
+                elementCount: theme.pages[key].elements.length,
+                elementIds: theme.pages[key].elements.map((el: any) => el.id)
+            })));
+            console.log('=== END YAML PARSING ===');
+            
+            console.log('=== BEFORE CUSTOM THEME CREATION ===');
+            console.log('theme.pages:', theme.pages);
+            console.log('theme.pages keys:', Object.keys(theme.pages || {}));
+            console.log('theme.pages content:', theme.pages);
+            
+            // Convert to our CustomTheme format
+            const customTheme: CustomTheme = {
+                id: `theme_${Date.now()}`,
+                name: theme.name || "Imported Theme",
+                colors: {
+                    background: theme.colors?.background || "#f8fafc",
+                    slideBg: theme.colors?.background || "#ffffff",
+                    slideTitle: theme.colors?.slideTitle || "#1e293b",
+                    slideHeading: "#334155",
+                    slideDescription: "#64748b",
+                    slideBox: "#f1f5f9",
+                    iconBg: "#3b82f6",
+                    chartColors: ["#3b82f6", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b"],
+                },
+                font: {
+                    family: theme.fonts?.title || "Inter",
+                    size: theme.defaults?.titleFontSize || 16,
+                    weight: 400,
+                },
+                layouts: {
+                    enabled: [1, 2, 4, 5, 6, 7, 8, 9],
+                    custom: [],
+                },
+                prompts: {
+                    imagePrompt: "Modern and professional with clean lines and minimal design. Use a sophisticated color palette with subtle gradients and professional typography.",
+                    contentStyle: "Professional and engaging content with clear hierarchy and concise messaging.",
+                    slideStructure: "Balanced layout with clear visual hierarchy, appropriate spacing, and professional presentation style.",
+                },
+                isActive: false,
+                selectedPage: 'page1',
+                pages: theme.pages || { page1: { name: 'Page 1', elements: [] } },
+            };
+            
+            console.log('=== AFTER CUSTOM THEME CREATION ===');
+            console.log('customTheme.pages:', customTheme.pages);
+            console.log('customTheme.pages keys:', Object.keys(customTheme.pages || {}));
+            
+            // Convert elements to our format with all properties
+            Object.keys(customTheme.pages || {}).forEach(pageKey => {
+                const page = customTheme.pages![pageKey];
+                console.log(`Converting ${page.elements.length} elements for page ${pageKey}:`, page.elements);
+                page.elements = page.elements.map(element => {
+                    const convertedElement = {
+                        id: element.id,
+                        name: element.id.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+                        type: element.type === 'textbox' ? 'text' : 
+                              element.type === 'bullet_list' ? 'bullet-list' : 
+                              element.type === 'image' ? 'image' : 'text',
+                        structure: {
+                            x: element.structure.x || 10,
+                            y: element.structure.y || 10,
+                            width: element.structure.width || 30,
+                            height: element.structure.height || 20,
+                            content: element.structure.content || '',
+                            items: element.type === 'bullet_list' ? element.structure.content?.split('\n').filter(item => item.trim()) || [] : [],
+                            src: element.structure.src || '',
+                            chartType: 'bar',
+                            prompt: element.prompt || '',
+                            // Add style properties
+                            font: element.style?.font || '',
+                            fontSize: element.style?.fontSize || theme.defaults?.bodyFontSize || 18,
+                            textColor: element.style?.textColor || theme.colors?.slideTitle || '#333333',
+                            alignment: element.style?.alignment || theme.defaults?.textAlignment || 'left',
+                            bulletType: element.style?.bulletType || 'disc',
+                            lineSpacing: theme.lineSpacing || 1.2
+                        },
+                        preview: ''
+                    };
+                    console.log(`Converted element ${element.id} to:`, convertedElement);
+                    return convertedElement;
+                });
+                console.log(`Page ${pageKey} now has ${page.elements.length} converted elements`);
+            });
+            
+            // Ensure selectedPage is set to the first available page
+            const pageKeys = Object.keys(customTheme.pages || {});
+            if (pageKeys.length > 0) {
+                customTheme.selectedPage = pageKeys[0];
+            }
+            
+            console.log('Final custom theme:', customTheme);
+            console.log('Available pages:', Object.keys(customTheme.pages || {}));
+            console.log('Selected page:', customTheme.selectedPage);
+            return customTheme;
+        } catch (error) {
+            console.error('Error parsing YAML theme:', error);
+            return null;
+        }
+    };
+
+    const handleImportTheme = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        
+        setImportingTheme(true);
+        
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const yamlContent = e.target?.result as string;
+                console.log('=== IMPORTING YAML INTO CURRENT THEME ===');
+                console.log('Raw YAML content:', yamlContent);
+                
+                // Parse YAML and extract pages directly
+                const lines = yamlContent.split('\n');
+                console.log('Total lines in YAML:', lines.length);
+                
+                let theme: any = {
+                    name: '',
+                    colors: {},
+                    fonts: {},
+                    defaults: {},
+                    pages: {}
+                };
+                
+                let currentPage: any = null;
+                let currentElement: any = null;
+                let inLayout = false;
+                let inStyle = false;
+                let inPosition = false;
+                let inSize = false;
+                
+                console.log('Starting to parse lines...');
+                
+                for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i];
+                    const indent = (line.match(/^\s*/)?.[0]?.length || 0);
+                    const trimmedLine = line.trim();
+                    
+                    console.log(`Line ${i + 1} (indent: ${indent}): "${line}"`);
+                    
+                    if (trimmedLine === '') {
+                        console.log('  -> Empty line, skipping');
+                        continue;
+                    }
+
+                    // Check for template section
+                    if (trimmedLine === 'template:') {
+                        console.log('  -> Found template section');
+                    }
+                    // Check for theme name (indent 2)
+                    else if (indent === 2 && trimmedLine.startsWith('name:')) {
+                        theme.name = trimmedLine.split('name:')[1].trim().replace(/"/g, '');
+                        console.log('  -> Set theme name:', theme.name);
+                    }
+                    // Check for theme description (indent 2)
+                    else if (indent === 2 && trimmedLine.startsWith('description:')) {
+                        theme.description = trimmedLine.split('description:')[1].trim().replace(/"/g, '');
+                        console.log('  -> Set theme description:', theme.description);
+                    }
+                    // Check for general_style section (indent 2)
+                    else if (indent === 2 && trimmedLine === 'general_style:') {
+                        console.log('  -> Found general_style section');
+                        // Parse general style properties
+                        i++;
+                        while (i < lines.length && lines[i].trim() && ((lines[i].match(/^\s*/)?.[0]?.length || 0) > 2)) {
+                            const styleLine = lines[i].trim();
+                            console.log(`    -> Processing style line: "${styleLine}"`);
+                            
+                            if (styleLine.startsWith('background_color:')) {
+                                theme.colors.background = styleLine.split('background_color:')[1].trim().replace(/"/g, '');
+                                console.log('      -> Set background color:', theme.colors.background);
+                            } else if (styleLine.startsWith('text_color:')) {
+                                theme.colors.slideTitle = styleLine.split('text_color:')[1].trim().replace(/"/g, '');
+                                console.log('      -> Set text color:', theme.colors.slideTitle);
+                            } else if (styleLine === 'fonts:') {
+                                console.log('      -> Found fonts section');
+                                i++;
+                                while (i < lines.length && lines[i].trim() && ((lines[i].match(/^\s*/)?.[0]?.length || 0) > 4)) {
+                                    const fontLine = lines[i].trim();
+                                    console.log(`        -> Processing font line: "${fontLine}"`);
+                                    
+                                    if (fontLine.startsWith('title:')) {
+                                        theme.fonts.title = fontLine.split('title:')[1].trim().replace(/"/g, '');
+                                        console.log('          -> Set title font:', theme.fonts.title);
+                                    } else if (fontLine.startsWith('subtitle:')) {
+                                        theme.fonts.subtitle = fontLine.split('subtitle:')[1].trim().replace(/"/g, '');
+                                        console.log('          -> Set subtitle font:', theme.fonts.subtitle);
+                                    } else if (fontLine.startsWith('heading:')) {
+                                        theme.fonts.heading = fontLine.split('heading:')[1].trim().replace(/"/g, '');
+                                        console.log('          -> Set heading font:', theme.fonts.heading);
+                                    } else if (fontLine.startsWith('body:')) {
+                                        theme.fonts.body = fontLine.split('body:')[1].trim().replace(/"/g, '');
+                                        console.log('          -> Set body font:', theme.fonts.body);
+                                    } else if (fontLine.startsWith('caption:')) {
+                                        theme.fonts.caption = fontLine.split('caption:')[1].trim().replace(/"/g, '');
+                                        console.log('          -> Set caption font:', theme.fonts.caption);
+                                    }
+                                    i++;
+                                }
+                                i--;
+                            } else if (styleLine === 'defaults:') {
+                                console.log('      -> Found defaults section');
+                                i++;
+                                while (i < lines.length && lines[i].trim() && ((lines[i].match(/^\s*/)?.[0]?.length || 0) > 4)) {
+                                    const defaultLine = lines[i].trim();
+                                    console.log(`        -> Processing default line: "${defaultLine}"`);
+                                    
+                                    if (defaultLine.startsWith('title_font_size:')) {
+                                        theme.defaults.titleFontSize = parseInt(defaultLine.split('title_font_size:')[1].trim());
+                                        console.log('          -> Set title font size:', theme.defaults.titleFontSize);
+                                    } else if (defaultLine.startsWith('subtitle_font_size:')) {
+                                        theme.defaults.subtitleFontSize = parseInt(defaultLine.split('subtitle_font_size:')[1].trim());
+                                        console.log('          -> Set subtitle font size:', theme.defaults.subtitleFontSize);
+                                    } else if (defaultLine.startsWith('heading_font_size:')) {
+                                        theme.defaults.headingFontSize = parseInt(defaultLine.split('heading_font_size:')[1].trim());
+                                        console.log('          -> Set heading font size:', theme.defaults.headingFontSize);
+                                    } else if (defaultLine.startsWith('body_font_size:')) {
+                                        theme.defaults.bodyFontSize = parseInt(defaultLine.split('body_font_size:')[1].trim());
+                                        console.log('          -> Set body font size:', theme.defaults.bodyFontSize);
+                                    } else if (defaultLine.startsWith('caption_font_size:')) {
+                                        theme.defaults.captionFontSize = parseInt(defaultLine.split('caption_font_size:')[1].trim());
+                                        console.log('          -> Set caption font size:', theme.defaults.captionFontSize);
+                                    } else if (defaultLine.startsWith('text_alignment:')) {
+                                        theme.defaults.textAlignment = defaultLine.split('text_alignment:')[1].trim().replace(/"/g, '');
+                                        console.log('          -> Set text alignment:', theme.defaults.textAlignment);
+                                    }
+                                    i++;
+                                }
+                                i--;
+                            } else if (styleLine.startsWith('line_spacing:')) {
+                                theme.lineSpacing = parseFloat(styleLine.split('line_spacing:')[1].trim());
+                                console.log('      -> Set line spacing:', theme.lineSpacing);
+                            }
+                            i++;
+                        }
+                        i--;
+                    }
+                    // Check for page_templates section (indent 2)
+                    else if (indent === 2 && trimmedLine === 'page_templates:') {
+                        console.log('  -> Found page_templates section');
+                        // Initialize pages object
+                        theme.pages = {};
+                    }
+                    // Check for page template start (indent 4, starts with - name:)
+                    else if (indent === 4 && trimmedLine.startsWith('- name:')) {
+                        // Start of a page template
+                        console.log('  -> Found page template start');
+                        if (currentPage && currentElement) {
+                            currentPage.elements.push(currentElement);
+                            console.log('    -> Added pending element to page:', currentElement.id, 'Total elements in page now:', currentPage.elements.length);
+                            currentElement = null;
+                        }
+                        if (currentPage) {
+                            const pageKey = `page${Object.keys(theme.pages || {}).length + 1}`;
+                            theme.pages[pageKey] = currentPage;
+                            console.log(`    -> Stored page "${currentPage.name}" with key "${pageKey}"`);
+                        }
+                        const pageName = trimmedLine.split('name:')[1].trim().replace(/"/g, '');
+                        currentPage = {
+                            name: pageName,
+                            elements: []
+                        };
+                        inLayout = false;
+                        inStyle = false;
+                        inPosition = false;
+                        inSize = false;
+                        console.log('    -> Started new page:', pageName);
+                    }
+                    // Check for page description (indent 6)
+                    else if (indent === 6 && trimmedLine.startsWith('description:')) {
+                        if (currentPage) {
+                            currentPage.description = trimmedLine.split('description:')[1].trim().replace(/"/g, '');
+                            console.log('    -> Set page description:', currentPage.description);
+                        }
+                    }
+                    // Check for layout section (indent 6)
+                    else if (indent === 6 && trimmedLine === 'layout:') {
+                        inLayout = true;
+                        console.log('    -> Started layout section for page:', currentPage?.name);
+                    }
+                    // Check for layout element start (indent 8, starts with - id:)
+                    else if (indent === 8 && trimmedLine.startsWith('- id:') && inLayout) {
+                        // Start of a layout element
+                        if (currentElement && currentPage) {
+                            currentPage.elements.push(currentElement);
+                            console.log('    -> Added pending element to page:', currentElement.id, 'Total elements in page now:', currentPage.elements.length);
+                            currentElement = null;
+                        }
+                        const elementId = trimmedLine.split('id:')[1].trim().replace(/"/g, '');
+                        currentElement = {
+                            id: elementId,
+                            structure: {},
+                            style: {},
+                            prompt: ''
+                        };
+                        inStyle = false;
+                        inPosition = false;
+                        inSize = false;
+                        console.log('    -> Started new element:', elementId, 'for page:', currentPage?.name);
+                    }
+                    // Check for element type (indent 10)
+                    else if (indent === 10 && trimmedLine.startsWith('type:')) {
+                        if (currentElement) {
+                            currentElement.type = trimmedLine.split('type:')[1].trim().replace(/"/g, '');
+                            console.log('      -> Element type:', currentElement.type);
+                        }
+                    }
+                    // Check for position section (indent 10)
+                    else if (indent === 10 && trimmedLine === 'position:') {
+                        inPosition = true;
+                        inSize = false;
+                        inStyle = false;
+                    }
+                    // Check for position coordinates (indent 12)
+                    else if (inPosition && indent === 12) {
+                        if (trimmedLine.startsWith('x:') && currentElement) {
+                            currentElement.structure.x = parseInt(trimmedLine.split('x:')[1].trim());
+                        } else if (trimmedLine.startsWith('y:') && currentElement) {
+                            currentElement.structure.y = parseInt(trimmedLine.split('y:')[1].trim());
+                        }
+                    }
+                    // Check for size section (indent 10)
+                    else if (indent === 10 && trimmedLine === 'size:') {
+                        inSize = true;
+                        inPosition = false;
+                        inStyle = false;
+                    }
+                    // Check for size dimensions (indent 12)
+                    else if (inSize && indent === 12) {
+                        if (trimmedLine.startsWith('width:') && currentElement) {
+                            currentElement.structure.width = parseInt(trimmedLine.split('width:')[1].trim());
+                        } else if (trimmedLine.startsWith('height:') && currentElement) {
+                            currentElement.structure.height = parseInt(trimmedLine.split('height:')[1].trim());
+                        }
+                    }
+                    // Check for style section (indent 10)
+                    else if (indent === 10 && trimmedLine === 'style:') {
+                        inStyle = true;
+                        inPosition = false;
+                        inSize = false;
+                    }
+                    // Check for style properties (indent 12)
+                    else if (inStyle && indent === 12) {
+                        // Parse element style properties
+                        if (trimmedLine.startsWith('font:') && currentElement) {
+                            currentElement.style.font = trimmedLine.split('font:')[1].trim().replace(/"/g, '');
+                        } else if (trimmedLine.startsWith('font_size:') && currentElement) {
+                            currentElement.style.fontSize = parseInt(trimmedLine.split('font_size:')[1].trim());
+                        } else if (trimmedLine.startsWith('text_color:') && currentElement) {
+                            currentElement.style.textColor = trimmedLine.split('text_color:')[1].trim().replace(/"/g, '');
+                        } else if (trimmedLine.startsWith('alignment:') && currentElement) {
+                            currentElement.style.alignment = trimmedLine.split('alignment:')[1].trim().replace(/"/g, '');
+                        } else if (trimmedLine.startsWith('bullet_type:') && currentElement) {
+                            currentElement.style.bulletType = trimmedLine.split('bullet_type:')[1].trim().replace(/"/g, '');
+                        }
+                    }
+                    // Check for placeholder text (indent 10)
+                    else if (indent === 10 && trimmedLine.startsWith('placeholder_text:')) {
+                        // Handle multi-line placeholder text
+                        let placeholderText = trimmedLine.split('placeholder_text:')[1].trim().replace(/"/g, '');
+                        if (placeholderText === '|') {
+                            // Multi-line text
+                            i++;
+                            placeholderText = '';
+                            while (i < lines.length && lines[i].trim() && ((lines[i].match(/^\s*/)?.[0]?.length || 0) > 10)) {
+                                placeholderText += lines[i].trim() + '\n';
+                                i++;
+                            }
+                            i--;
+                            placeholderText = placeholderText.trim();
+                        }
+                        if (currentElement) {
+                            currentElement.structure.content = placeholderText;
+                            console.log('      -> Set placeholder text:', placeholderText);
+                        }
+                    }
+                    // Check for placeholder image URL (indent 10)
+                    else if (indent === 10 && trimmedLine.startsWith('placeholder_image_url:')) {
+                        if (currentElement) {
+                            currentElement.structure.src = trimmedLine.split('placeholder_image_url:')[1].trim().replace(/"/g, '');
+                        }
+                    }
+                    // Check for prompt (indent 10)
+                    else if (indent === 10 && trimmedLine.startsWith('prompt:')) {
+                        // Handle multi-line prompts
+                        let prompt = trimmedLine.split('prompt:')[1].trim().replace(/"/g, '');
+                        if (prompt === '|') {
+                            // Multi-line prompt
+                            i++;
+                            prompt = '';
+                            while (i < lines.length && lines[i].trim() && ((lines[i].match(/^\s*/)?.[0]?.length || 0) > 10)) {
+                                prompt += lines[i].trim() + '\n';
+                                i++;
+                            }
+                            i--;
+                            prompt = prompt.trim();
+                        }
+                        if (currentElement) {
+                            currentElement.prompt = prompt;
+                        }
+                    }
+                    else {
+                        // Debug: show what lines are not being matched
+                        if (trimmedLine.includes('name:') || trimmedLine.includes('page_templates:') || trimmedLine.includes('layout:') || trimmedLine.includes('- id:')) {
+                            console.log(`  -> DEBUG: Unmatched line "${line}" with indent ${indent}`);
+                        }
+                    }
+                }
+                
+                // Add the last page and element
+                if (currentElement && currentPage) {
+                    currentPage.elements.push(currentElement);
+                    console.log('    -> Added final element to page:', currentElement.id, 'Total elements in page now:', currentPage.elements.length);
+                }
+                if (currentPage) {
+                    const pageKey = `page${Object.keys(theme.pages || {}).length + 1}`;
+                    theme.pages[pageKey] = currentPage;
+                    console.log('    -> Added final page:', currentPage.name, 'with', currentPage.elements.length, 'elements');
+                }
+                
+                console.log('=== YAML PARSING SUMMARY ===');
+                console.log('Theme name:', theme.name);
+                console.log('Theme description:', theme.description);
+                console.log('Colors found:', theme.colors);
+                console.log('Fonts found:', theme.fonts);
+                console.log('Defaults found:', theme.defaults);
+                console.log('Pages found:', Object.keys(theme.pages || {}).length);
+                console.log('Page details:', Object.keys(theme.pages || {}).map(key => ({
+                    key,
+                    name: theme.pages[key].name,
+                    description: theme.pages[key].description,
+                    elementCount: theme.pages[key].elements.length,
+                    elementIds: theme.pages[key].elements.map((el: any) => el.id)
+                })));
+                
+                // Now import the parsed pages directly into the current editing theme
+                if (Object.keys(theme.pages || {}).length > 0) {
+                    // Create or update the editing theme
+                    const updatedTheme: CustomTheme = {
+                        id: editingTheme?.id || `theme_${Date.now()}`,
+                        name: editingTheme?.name || theme.name || "Imported Theme",
+                        colors: {
+                            background: theme.colors?.background || editingTheme?.colors.background || "#f8fafc",
+                            slideBg: theme.colors?.background || editingTheme?.colors.slideBg || "#ffffff",
+                            slideTitle: theme.colors?.slideTitle || editingTheme?.colors.slideTitle || "#1e293b",
+                            slideHeading: editingTheme?.colors.slideHeading || "#334155",
+                            slideDescription: editingTheme?.colors.slideDescription || "#64748b",
+                            slideBox: editingTheme?.colors.slideBox || "#f1f5f9",
+                            iconBg: editingTheme?.colors.iconBg || "#3b82f6",
+                            chartColors: editingTheme?.colors.chartColors || ["#3b82f6", "#8b5cf6", "#06b6d4", "#10b981", "#f59e0b"],
+                        },
+                        font: {
+                            family: theme.fonts?.title || editingTheme?.font.family || "Inter",
+                            size: theme.defaults?.titleFontSize || editingTheme?.font.size || 16,
+                            weight: editingTheme?.font.weight || 400,
+                        },
+                        layouts: editingTheme?.layouts || {
+                            enabled: [1, 2, 4, 5, 6, 7, 8, 9],
+                            custom: [],
+                        },
+                        prompts: editingTheme?.prompts || {
+                            imagePrompt: "Modern and professional with clean lines and minimal design. Use a sophisticated color palette with subtle gradients and professional typography.",
+                            contentStyle: "Professional and engaging content with clear hierarchy and concise messaging.",
+                            slideStructure: "Balanced layout with clear visual hierarchy, appropriate spacing, and professional presentation style.",
+                        },
+                        isActive: editingTheme?.isActive || false,
+                        selectedPage: 'page1',
+                        pages: {}
+                    };
+                    
+                    // Convert and import the parsed pages
+                    Object.keys(theme.pages || {}).forEach((pageKey, index) => {
+                        const parsedPage = theme.pages[pageKey];
+                        const newPageKey = `page${index + 1}`;
+                        
+                        updatedTheme.pages![newPageKey] = {
+                            name: parsedPage.name,
+                            description: parsedPage.description || '',
+                            elements: parsedPage.elements.map((element: any) => ({
+                                id: element.id,
+                                name: element.id.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+                                type: element.type === 'textbox' ? 'text' : 
+                                      element.type === 'bullet_list' ? 'bullet-list' : 
+                                      element.type === 'image' ? 'image' : 'text',
+                                structure: {
+                                    x: element.structure.x || 10,
+                                    y: element.structure.y || 10,
+                                    width: element.structure.width || 30,
+                                    height: element.structure.height || 20,
+                                    content: element.structure.content || '',
+                                    items: element.type === 'bullet_list' ? element.structure.content?.split('\n').filter((item: string) => item.trim()) || [] : [],
+                                    src: element.structure.src || '',
+                                    chartType: 'bar',
+                                    prompt: element.prompt || '',
+                                    // Add style properties
+                                    font: element.style?.font || '',
+                                    fontSize: element.style?.fontSize || theme.defaults?.bodyFontSize || 18,
+                                    textColor: element.style?.textColor || theme.colors?.slideTitle || '#333333',
+                                    alignment: element.style?.alignment || theme.defaults?.textAlignment || 'left',
+                                    bulletType: element.style?.bulletType || 'disc',
+                                    lineSpacing: theme.lineSpacing || 1.2
+                                },
+                                preview: ''
+                            }))
+                        };
+                        
+                        console.log(`Imported page "${parsedPage.name}" as "${newPageKey}" with ${parsedPage.elements.length} elements`);
+                    });
+                    
+                    console.log('Final updated theme:', updatedTheme);
+                    console.log('Pages imported:', Object.keys(updatedTheme.pages || {}));
+                    
+                    setEditingTheme(updatedTheme);
+                    setShowThemeCreator(true);
+                    setActiveThemeTab("layouts");
+                    
+                    toast({
+                        title: "Success",
+                        description: `Theme "${updatedTheme.name}" imported successfully with ${Object.keys(updatedTheme.pages || {}).length} page(s)`,
+                    });
+                } else {
+                    toast({
+                        title: "Error",
+                        description: "No pages found in YAML file",
+                        variant: "destructive",
+                    });
+                }
+            } catch (error) {
+                console.error('Error importing theme:', error);
+                toast({
+                    title: "Error",
+                    description: "Failed to import theme file",
+                    variant: "destructive",
+                });
+            } finally {
+                setImportingTheme(false);
+                // Reset file input
+                event.target.value = '';
+            }
+        };
+        
+        reader.onerror = () => {
+            toast({
+                title: "Error",
+                description: "Failed to read theme file",
+                variant: "destructive",
+            });
+            setImportingTheme(false);
+            event.target.value = '';
+        };
+        
+        reader.readAsText(file);
+    };
+
+    // Helper: Convert JS object to YAML (for export)
+    function themeToYaml(theme: CustomTheme): string {
+        // Helper for indentation
+        const indent = (level: number) => '  '.repeat(level);
+        let yaml = 'template:\n';
+        yaml += `${indent(1)}name: "${theme.name}"\n`;
+        yaml += `${indent(1)}description: "${(theme.pages?.page1 as any)?.description || ''}"\n`;
+        yaml += `${indent(1)}general_style:\n`;
+        yaml += `${indent(2)}background_color: "${theme.colors.background}"\n`;
+        yaml += `${indent(2)}text_color: "${theme.colors.slideTitle}"\n`;
+        yaml += `${indent(2)}fonts:\n`;
+        yaml += `${indent(3)}title: "${theme.font.family}"\n`;
+        yaml += `${indent(3)}subtitle: "${theme.font.family}"\n`;
+        yaml += `${indent(3)}heading: "${theme.font.family}"\n`;
+        yaml += `${indent(3)}body: "${theme.font.family}"\n`;
+        yaml += `${indent(3)}caption: "${theme.font.family}"\n`;
+        yaml += `${indent(2)}defaults:\n`;
+        yaml += `${indent(3)}title_font_size: ${theme.font.size}\n`;
+        yaml += `${indent(3)}subtitle_font_size: ${Math.floor(theme.font.size * 0.8)}\n`;
+        yaml += `${indent(3)}heading_font_size: ${Math.floor(theme.font.size * 0.9)}\n`;
+        yaml += `${indent(3)}body_font_size: ${theme.font.size}\n`;
+        yaml += `${indent(3)}caption_font_size: ${Math.floor(theme.font.size * 0.7)}\n`;
+        yaml += `${indent(3)}text_alignment: "left"\n`;
+        yaml += `${indent(2)}line_spacing: 1.2\n`;
+        yaml += `${indent(1)}page_templates:\n`;
+        
+        if (theme.pages) {
+            Object.values(theme.pages).forEach((page: any) => {
+                console.log('Exporting page:', page.name, 'with elements:', page.elements);
+                yaml += `${indent(2)}- name: "${page.name}"\n`;
+                yaml += `${indent(3)}description: "${page?.description || ''}"\n`;
+                yaml += `${indent(3)}layout:\n`;
+                
+                // Check if elements exist and have content
+                if (page.elements && Array.isArray(page.elements) && page.elements.length > 0) {
+                    console.log('Processing', page.elements.length, 'elements');
+                    page.elements.forEach((el: any, index: number) => {
+                        console.log('Processing element', index, ':', el);
+                        yaml += `${indent(4)}- id: "${el.id}"\n`;
+                        
+                        // Convert type to YAML format
+                        let elementType = el.type;
+                        if (el.type === 'text') elementType = 'textbox';
+                        else if (el.type === 'bullet-list') elementType = 'bullet_list';
+                        yaml += `${indent(5)}type: "${elementType}"\n`;
+                        
+                        // Position
+                        yaml += `${indent(5)}position:\n`;
+                        yaml += `${indent(6)}x: ${el.structure.x || 10}\n`;
+                        yaml += `${indent(6)}y: ${el.structure.y || 10}\n`;
+                        
+                        // Size
+                        yaml += `${indent(5)}size:\n`;
+                        yaml += `${indent(6)}width: ${el.structure.width || 30}\n`;
+                        yaml += `${indent(6)}height: ${el.structure.height || 20}\n`;
+                        
+                        // Style
+                        yaml += `${indent(5)}style:\n`;
+                        if (el.structure.font) {
+                            yaml += `${indent(6)}font: "${el.structure.font}"\n`;
+                        } else {
+                            yaml += `${indent(6)}font: "${theme.font.family}"\n`;
+                        }
+                        
+                        if (el.structure.fontSize) {
+                            yaml += `${indent(6)}font_size: ${el.structure.fontSize}\n`;
+                        } else {
+                            yaml += `${indent(6)}font_size: ${theme.font.size}\n`;
+                        }
+                        
+                        if (el.structure.textColor) {
+                            yaml += `${indent(6)}text_color: "${el.structure.textColor}"\n`;
+                        } else {
+                            yaml += `${indent(6)}text_color: "${theme.colors.slideTitle}"\n`;
+                        }
+                        
+                        if (el.structure.alignment) {
+                            yaml += `${indent(6)}alignment: "${el.structure.alignment}"\n`;
+                        } else {
+                            yaml += `${indent(6)}alignment: "left"\n`;
+                        }
+                        
+                        if (el.structure.bulletType) {
+                            yaml += `${indent(6)}bullet_type: "${el.structure.bulletType}"\n`;
+                        }
+                        
+                        // Content
+                        if (el.type === 'image' && el.structure.src) {
+                            yaml += `${indent(5)}placeholder_image_url: "${el.structure.src}"\n`;
+                        } else if (el.structure.content) {
+                            if (el.type === 'bullet-list' && el.structure.items && el.structure.items.length > 0) {
+                                yaml += `${indent(5)}placeholder_text: |\n`;
+                                el.structure.items.forEach((item: string) => {
+                                    yaml += `${indent(6)}- ${item}\n`;
+                                });
+                            } else {
+                                // Handle multi-line content
+                                const content = el.structure.content;
+                                if (content.includes('\n')) {
+                                    yaml += `${indent(5)}placeholder_text: |\n`;
+                                    content.split('\n').forEach((line: string) => {
+                                        yaml += `${indent(6)}${line}\n`;
+                                    });
+                                } else {
+                                    yaml += `${indent(5)}placeholder_text: "${content.replace(/"/g, '\\"')}"\n`;
+                                }
+                            }
+                        }
+                        
+                        // Prompt
+                        if (el.structure.prompt) {
+                            const prompt = el.structure.prompt;
+                            if (prompt.includes('\n')) {
+                                yaml += `${indent(5)}prompt: |\n`;
+                                prompt.split('\n').forEach((line: string) => {
+                                    yaml += `${indent(6)}${line}\n`;
+                                });
+                            } else {
+                                yaml += `${indent(5)}prompt: "${prompt.replace(/"/g, '\\"')}"\n`;
+                            }
+                        }
+                    });
+                } else {
+                    console.log('No elements found for page:', page.name);
+                    // Add a default element if none exist
+                    yaml += `${indent(4)}- id: "default_title"\n`;
+                    yaml += `${indent(5)}type: "textbox"\n`;
+                    yaml += `${indent(5)}position:\n`;
+                    yaml += `${indent(6)}x: 10\n`;
+                    yaml += `${indent(6)}y: 10\n`;
+                    yaml += `${indent(5)}size:\n`;
+                    yaml += `${indent(6)}width: 80\n`;
+                    yaml += `${indent(6)}height: 20\n`;
+                    yaml += `${indent(5)}style:\n`;
+                    yaml += `${indent(6)}font: "${theme.font.family}"\n`;
+                    yaml += `${indent(6)}font_size: ${theme.font.size}\n`;
+                    yaml += `${indent(6)}text_color: "${theme.colors.slideTitle}"\n`;
+                    yaml += `${indent(6)}alignment: "left"\n`;
+                    yaml += `${indent(5)}placeholder_text: "Sample Title"\n`;
+                }
+            });
+        } else {
+            console.log('No pages found in theme');
+            // Add a default page if none exist
+            yaml += `${indent(2)}- name: "Default Page"\n`;
+            yaml += `${indent(3)}description: "Default page template"\n`;
+            yaml += `${indent(3)}layout:\n`;
+            yaml += `${indent(4)}- id: "default_title"\n`;
+            yaml += `${indent(5)}type: "textbox"\n`;
+            yaml += `${indent(5)}position:\n`;
+            yaml += `${indent(6)}x: 10\n`;
+            yaml += `${indent(6)}y: 10\n`;
+            yaml += `${indent(5)}size:\n`;
+            yaml += `${indent(6)}width: 80\n`;
+            yaml += `${indent(6)}height: 20\n`;
+            yaml += `${indent(5)}style:\n`;
+            yaml += `${indent(6)}font: "${theme.font.family}"\n`;
+            yaml += `${indent(6)}font_size: ${theme.font.size}\n`;
+            yaml += `${indent(6)}text_color: "${theme.colors.slideTitle}"\n`;
+            yaml += `${indent(6)}alignment: "left"\n`;
+            yaml += `${indent(5)}placeholder_text: "Sample Title"\n`;
+        }
+        
+        console.log('Generated YAML:', yaml);
+        return yaml;
+    }
+
+    function downloadYamlFile(yaml: string, filename: string) {
+        const blob = new Blob([yaml], { type: 'text/yaml' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }, 0);
+    }
 
     if (!canChangeKeys) {
         return null;
@@ -973,13 +2515,35 @@ const SettingsPage = () => {
                                 <Palette className="w-5 h-5 text-blue-600" />
                                 <h2 className="text-lg font-medium text-gray-900">Custom Theme Creation</h2>
                             </div>
-                            <Button
-                                onClick={createNewTheme}
-                                className="bg-blue-600 hover:bg-blue-700 text-white"
-                            >
-                                <Plus className="w-4 h-4 mr-2" />
-                                Create New Theme
-                            </Button>
+                            <div className="flex gap-2">
+                                <Button
+                                    onClick={createNewTheme}
+                                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                                >
+                                    <Plus className="w-4 h-4 mr-2" />
+                                    Create New Theme
+                                </Button>
+                                <div className="relative">
+                                    <input
+                                        type="file"
+                                        accept=".yaml,.yml"
+                                        onChange={handleImportTheme}
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                        disabled={importingTheme}
+                                    />
+                                    <Button
+                                        className={`${importingTheme ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'} text-white`}
+                                        disabled={importingTheme}
+                                    >
+                                        {importingTheme ? (
+                                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                        ) : (
+                                            <Upload className="w-4 h-4 mr-2" />
+                                        )}
+                                        {importingTheme ? 'Importing...' : 'Import Theme'}
+                                    </Button>
+                                </div>
+                            </div>
                         </div>
 
                         {/* Existing Custom Themes */}
@@ -1008,6 +2572,18 @@ const SettingsPage = () => {
                                                             className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
                                                         >
                                                             <Trash2 className="w-3 h-3" />
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => {
+                                                                const yaml = themeToYaml(theme);
+                                                                downloadYamlFile(yaml, `${theme.name.replace(/\s+/g, '_').toLowerCase() || 'theme'}.yaml`);
+                                                            }}
+                                                            className="h-6 w-6 p-0 text-green-600 hover:text-green-800"
+                                                            title="Export as YAML"
+                                                        >
+                                                            <Download className="w-3 h-3" />
                                                         </Button>
                                                     </div>
                                                 </div>
@@ -1071,11 +2647,10 @@ const SettingsPage = () => {
                         
                         <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
                             <Tabs value={activeThemeTab} onValueChange={setActiveThemeTab}>
-                                <TabsList className="grid w-full grid-cols-4">
+                                <TabsList className="grid w-full grid-cols-3">
                                     <TabsTrigger value="general">General</TabsTrigger>
                                     <TabsTrigger value="colors">Colors</TabsTrigger>
-                                    <TabsTrigger value="layouts">Layouts</TabsTrigger>
-                                    <TabsTrigger value="prompts">Prompts</TabsTrigger>
+                                    <TabsTrigger value="layouts">Page Templates</TabsTrigger>
                                 </TabsList>
 
                                 <TabsContent value="general" className="space-y-4">
@@ -1350,8 +2925,121 @@ const SettingsPage = () => {
 
                                 <TabsContent value="layouts" className="space-y-4">
                                     <div>
-                                        <Label>Dynamic Slide Layout Builder</Label>
-                                        <p className="text-sm text-gray-600 mb-4">Create custom slide layouts by adding and arranging elements</p>
+                                        <Label>Page Templates Builder</Label>
+                                        <p className="text-sm text-gray-600 mb-4">Create custom page layouts by adding and arranging elements for each page</p>
+                                        
+                                        {/* Page Selection */}
+                                        <div className="mb-6">
+                                            <Label className="text-sm font-medium mb-2 block">Select Page</Label>
+                                            <div className="flex gap-2">
+                                                <select 
+                                                    value={editingTheme.selectedPage || 'page1'} 
+                                                    onChange={(e) => {
+                                                        console.log('Page selection changed:', e.target.value);
+                                                        setEditingTheme({
+                                                            ...editingTheme,
+                                                            selectedPage: e.target.value,
+                                                            pages: editingTheme.pages || { page1: { name: 'Page 1', elements: [] } }
+                                                        });
+                                                    }}
+                                                    className="w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                >
+                                                    {(() => {
+                                                        const pages = editingTheme.pages || { page1: { name: 'Page 1', elements: [] } };
+                                                        const pageKeys = Object.keys(pages);
+                                                        console.log('Page dropdown - Available pages:', pages, 'Keys:', pageKeys, 'Selected:', editingTheme.selectedPage);
+                                                        console.log('Page dropdown - editingTheme:', editingTheme);
+                                                        console.log('Page dropdown - editingTheme.pages:', editingTheme.pages);
+                                                        if (pageKeys.length === 0) {
+                                                            console.log('WARNING: No pages found in editingTheme.pages');
+                                                            console.log('WARNING: editingTheme.pages is:', editingTheme.pages);
+                                                        }
+                                                        return pageKeys.map((pageKey) => {
+                                                            const page = pages[pageKey];
+                                                            console.log(`Page ${pageKey}:`, page);
+                                                            return (
+                                                                <option key={pageKey} value={pageKey}>
+                                                                    {page?.name || pageKey}
+                                                                </option>
+                                                            );
+                                                        });
+                                                    })()}
+                                                </select>
+                                                <Button
+                                                    onClick={() => {
+                                                        const pageCount = Object.keys(editingTheme.pages || { page1: { name: 'Page 1', elements: [] } }).length;
+                                                        const newPageKey = `page${pageCount + 1}`;
+                                                        const newPages = {
+                                                            ...(editingTheme.pages || { page1: { name: 'Page 1', elements: [] } }),
+                                                            [newPageKey]: { 
+                                                                name: `Page ${pageCount + 1}`, 
+                                                                description: '',
+                                                                elements: [] 
+                                                            }
+                                                        };
+                                                        setEditingTheme({
+                                                            ...editingTheme,
+                                                            pages: newPages,
+                                                            selectedPage: newPageKey
+                                                        });
+                                                    }}
+                                                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                                                >
+                                                    <Plus className="w-4 h-4 mr-2" />
+                                                    Add Page
+                                                </Button>
+                                            </div>
+                                            
+                                            {/* Page Name Editor */}
+                                            {editingTheme.selectedPage && editingTheme.pages && editingTheme.pages[editingTheme.selectedPage] && (
+                                                <div className="mt-3 space-y-3">
+                                                    <div>
+                                                        <Label className="text-sm font-medium mb-2 block">Page Name</Label>
+                                                        <Input
+                                                            value={editingTheme.pages[editingTheme.selectedPage].name}
+                                                            onChange={(e) => {
+                                                                if (!editingTheme.pages) return;
+                                                                setEditingTheme({
+                                                                    ...editingTheme,
+                                                                    pages: {
+                                                                        ...editingTheme.pages,
+                                                                        [editingTheme.selectedPage || 'page1']: {
+                                                                            ...editingTheme.pages[editingTheme.selectedPage || 'page1'],
+                                                                            name: e.target.value
+                                                                        }
+                                                                    }
+                                                                });
+                                                            }}
+                                                            placeholder="Enter page name..."
+                                                            className="w-64"
+                                                        />
+                                                    </div>
+                                                    
+                                                    <div>
+                                                        <Label className="text-sm font-medium mb-2 block">Page Description</Label>
+                                                        <textarea
+                                                            value={editingTheme.pages[editingTheme.selectedPage].description || ''}
+                                                            onChange={(e) => {
+                                                                if (!editingTheme.pages) return;
+                                                                setEditingTheme({
+                                                                    ...editingTheme,
+                                                                    pages: {
+                                                                        ...editingTheme.pages,
+                                                                        [editingTheme.selectedPage || 'page1']: {
+                                                                            ...editingTheme.pages[editingTheme.selectedPage || 'page1'],
+                                                                            description: e.target.value
+                                                                        }
+                                                                    }
+                                                                });
+                                                            }}
+                                                            placeholder="Enter page description..."
+                                                            className="w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                                            rows={3}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                         
                                         {/* Layout Preview */}
                                         <div className="mb-6">
@@ -1361,7 +3049,8 @@ const SettingsPage = () => {
                                                 style={{ backgroundColor: editingTheme.colors.slideBg }}
                                                 id="layout-preview-container"
                                             >
-                                                {editingTheme.layouts.custom.length === 0 ? (
+                                                {(!editingTheme.pages || !editingTheme.pages[editingTheme.selectedPage || 'page1'] || 
+                                                  editingTheme.pages[editingTheme.selectedPage || 'page1'].elements.length === 0) ? (
                                                     <div className="flex items-center justify-center h-full text-gray-500">
                                                         <div className="text-center">
                                                             <Layout className="w-8 h-8 mx-auto mb-2" />
@@ -1370,21 +3059,161 @@ const SettingsPage = () => {
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    <div className="p-4 h-full relative">
-                                                        {(editingTheme.layouts.custom || []).filter(Boolean).map((element, index) => (
-                                                            <DraggableElement
+                                                                        <div className="h-full relative">
+                        {(editingTheme.pages[editingTheme.selectedPage || 'page1'].elements || []).filter(Boolean).map((element, index) => (
+                                                            <div
                                                                 key={element.id}
-                                                                element={element}
-                                                                onUpdate={(updatedElement) => {
-                                                                    const newElements = [...editingTheme.layouts.custom];
-                                                                    newElements[index] = updatedElement;
-                                                                    setEditingTheme({
-                                                                        ...editingTheme,
-                                                                        layouts: { ...editingTheme.layouts, custom: newElements }
-                                                                    });
+                                                                className={`absolute border-2 border-blue-400 bg-blue-100 bg-opacity-50 rounded cursor-move hover:border-blue-600 transition-colors ${
+                                                                    draggingElement?.id === element.id ? 'border-blue-600 bg-blue-200' : ''
+                                                                } ${
+                                                                    resizingElement?.id === element.id ? 'border-green-600 bg-green-200' : ''
+                                                                }`}
+                                                                style={{
+                                                                    left: `${element.structure?.x || 0}%`,
+                                                                    top: `${element.structure?.y || 0}%`,
+                                                                    width: `${element.structure?.width || 30}%`,
+                                                                    height: `${element.structure?.height || 20}%`,
+                                                                    zIndex: (draggingElement?.id === element.id || resizingElement?.id === element.id) ? 1000 : index + 1
                                                                 }}
-                                                                onRemove={() => removeElement(element.id)}
-                                                            />
+                                                                title={element.name}
+                                                                onMouseDown={(e) => handleElementMouseDown(e, element)}
+                                                            >
+                                                                {/* Element Content Preview */}
+                                                                <div className="p-2 h-full overflow-hidden">
+                                                                    {element.type === 'title' && (
+                                                                        <div className="text-sm font-bold text-blue-800 truncate">
+                                                                            {element.structure?.content || 'Title Text'}
+                                                                        </div>
+                                                                    )}
+                                                                    {element.type === 'subtitle' && (
+                                                                        <div className="text-xs font-semibold text-blue-700 truncate">
+                                                                            {element.structure?.content || 'Subtitle Text'}
+                                                                        </div>
+                                                                    )}
+                                                                    {element.type === 'text' && (
+                                                                        <div className="text-xs text-blue-700 leading-tight">
+                                                                            {element.structure?.content || 'Text content...'}
+                                                                        </div>
+                                                                    )}
+                                                                    {element.type === 'bullet-list' && (
+                                                                        <div className="text-xs text-blue-700">
+                                                                            {element.structure?.items && element.structure.items.length > 0 ? (
+                                                                                <ul className="list-disc list-inside space-y-0.5">
+                                                                                    {element.structure.items.slice(0, 3).map((item, idx) => (
+                                                                                        <li key={idx} className="truncate">{item}</li>
+                                                                                    ))}
+                                                                                    {element.structure.items.length > 3 && (
+                                                                                        <li className="text-blue-500">+{element.structure.items.length - 3} more</li>
+                                                                                    )}
+                                                                                </ul>
+                                                                            ) : (
+                                                                                <div>• List item 1<br/>• List item 2<br/>• List item 3</div>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                    {element.type === 'image' && (
+                                                                        <div className="flex items-center justify-center h-full">
+                                                                            <div className="text-xs text-blue-600 text-center">
+                                                                                {element.structure?.src ? (
+                                                                                    <div>
+                                                                                        <div className="w-8 h-8 bg-blue-200 rounded mx-auto mb-1 flex items-center justify-center">
+                                                                                            📷
+                                                                        </div>
+                                                                                        <div className="truncate">{element.structure.src}</div>
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <div>
+                                                                                        <div className="w-8 h-8 bg-blue-200 rounded mx-auto mb-1 flex items-center justify-center">
+                                                                                            📷
+                                                                        </div>
+                                                                                        <div>Image</div>
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                    {element.type === 'chart' && (
+                                                                        <div className="flex items-center justify-center h-full">
+                                                                            <div className="text-xs text-blue-600 text-center">
+                                                                                <div className="w-8 h-8 bg-blue-200 rounded mx-auto mb-1 flex items-center justify-center">
+                                                                                    📊
+                                                                        </div>
+                                                                                <div>{element.structure?.chartType || 'bar'} Chart</div>
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                    {element.type === 'icon' && (
+                                                                        <div className="flex items-center justify-center h-full">
+                                                                            <div className="text-xs text-blue-600 text-center">
+                                                                                <div className="w-6 h-6 bg-blue-200 rounded mx-auto mb-1 flex items-center justify-center">
+                                                                                    ⭐
+                                                                        </div>
+                                                                                <div>Icon</div>
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                    {element.type === 'divider' && (
+                                                                        <div className="flex items-center justify-center h-full">
+                                                                            <div className="w-full h-0.5 bg-blue-400"></div>
+                                                                        </div>
+                                                                    )}
+                                                                    {/* Fallback for unknown types */}
+                                                                    {!['title', 'subtitle', 'text', 'bullet-list', 'image', 'chart', 'icon', 'divider'].includes(element.type) && (
+                                                                        <div className="text-xs text-center font-medium text-blue-800">
+                                                                            {element.name}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                {/* Resize handles */}
+                                                                <div 
+                                                                    className="absolute bottom-0 right-0 w-8 h-8 bg-blue-600 rounded-tl cursor-se-resize hover:bg-blue-700 z-10 flex items-center justify-center"
+                                                                    onMouseDown={(e) => {
+                                                                        console.log('SE resize handle clicked');
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        e.nativeEvent.stopImmediatePropagation();
+                                                                        handleResizeMouseDown(e, element, 'se');
+                                                                    }}
+                                                                >
+                                                                    <div className="w-2 h-2 bg-white rounded-full"></div>
+                                                                </div>
+                                                                <div 
+                                                                    className="absolute top-0 right-0 w-8 h-8 bg-blue-600 rounded-bl cursor-ne-resize hover:bg-blue-700 z-10 flex items-center justify-center"
+                                                                    onMouseDown={(e) => {
+                                                                        console.log('NE resize handle clicked');
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        e.nativeEvent.stopImmediatePropagation();
+                                                                        handleResizeMouseDown(e, element, 'ne');
+                                                                    }}
+                                                                >
+                                                                    <div className="w-2 h-2 bg-white rounded-full"></div>
+                                                                </div>
+                                                                <div 
+                                                                    className="absolute bottom-0 left-0 w-8 h-8 bg-blue-600 rounded-tr cursor-nw-resize hover:bg-blue-700 z-10 flex items-center justify-center"
+                                                                    onMouseDown={(e) => {
+                                                                        console.log('NW resize handle clicked');
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        e.nativeEvent.stopImmediatePropagation();
+                                                                        handleResizeMouseDown(e, element, 'nw');
+                                                                    }}
+                                                                >
+                                                                    <div className="w-2 h-2 bg-white rounded-full"></div>
+                                                                </div>
+                                                                <div 
+                                                                    className="absolute top-0 left-0 w-8 h-8 bg-blue-600 rounded-br cursor-sw-resize hover:bg-blue-700 z-10 flex items-center justify-center"
+                                                                    onMouseDown={(e) => {
+                                                                        console.log('SW resize handle clicked');
+                                                                        e.preventDefault();
+                                                                        e.stopPropagation();
+                                                                        e.nativeEvent.stopImmediatePropagation();
+                                                                        handleResizeMouseDown(e, element, 'sw');
+                                                                    }}
+                                                                >
+                                                                    <div className="w-2 h-2 bg-white rounded-full"></div>
+                                                                </div>
+                                                            </div>
                                                         ))}
                                                     </div>
                                                 )}
@@ -1397,7 +3226,7 @@ const SettingsPage = () => {
                                                 <Label className="text-sm font-medium mb-2 block">Add Elements</Label>
                                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                                                     <button
-                                                        onClick={() => addElement('title', 'Title')}
+                                                        onClick={() => addElementToPage('title', 'Title')}
                                                         className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
                                                     >
                                                         <div className="text-sm font-medium">Title</div>
@@ -1405,7 +3234,7 @@ const SettingsPage = () => {
                                                     </button>
                                                     
                                                     <button
-                                                        onClick={() => addElement('subtitle', 'Subtitle')}
+                                                        onClick={() => addElementToPage('subtitle', 'Subtitle')}
                                                         className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
                                                     >
                                                         <div className="text-sm font-medium">Subtitle</div>
@@ -1413,7 +3242,7 @@ const SettingsPage = () => {
                                                     </button>
                                                     
                                                     <button
-                                                        onClick={() => addElement('text', 'Text Block')}
+                                                        onClick={() => addElementToPage('text', 'Text Block')}
                                                         className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
                                                     >
                                                         <div className="text-sm font-medium">Text Block</div>
@@ -1421,7 +3250,7 @@ const SettingsPage = () => {
                                                     </button>
                                                     
                                                     <button
-                                                        onClick={() => addElement('bullet-list', 'Bullet List')}
+                                                        onClick={() => addElementToPage('bullet-list', 'Bullet List')}
                                                         className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
                                                     >
                                                         <div className="text-sm font-medium">Bullet List</div>
@@ -1429,7 +3258,7 @@ const SettingsPage = () => {
                                                     </button>
                                                     
                                                     <button
-                                                        onClick={() => addElement('image', 'Image')}
+                                                        onClick={() => addElementToPage('image', 'Image')}
                                                         className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
                                                     >
                                                         <div className="text-sm font-medium">Image</div>
@@ -1437,7 +3266,7 @@ const SettingsPage = () => {
                                                     </button>
                                                     
                                                     <button
-                                                        onClick={() => addElement('chart', 'Chart')}
+                                                        onClick={() => addElementToPage('chart', 'Chart')}
                                                         className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
                                                     >
                                                         <div className="text-sm font-medium">Chart</div>
@@ -1445,7 +3274,7 @@ const SettingsPage = () => {
                                                     </button>
                                                     
                                                     <button
-                                                        onClick={() => addElement('icon', 'Icon')}
+                                                        onClick={() => addElementToPage('icon', 'Icon')}
                                                         className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
                                                     >
                                                         <div className="text-sm font-medium">Icon</div>
@@ -1453,7 +3282,7 @@ const SettingsPage = () => {
                                                     </button>
                                                     
                                                     <button
-                                                        onClick={() => addElement('divider', 'Divider')}
+                                                        onClick={() => addElementToPage('divider', 'Divider')}
                                                         className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
                                                     >
                                                         <div className="text-sm font-medium">Divider</div>
@@ -1463,16 +3292,17 @@ const SettingsPage = () => {
                                             </div>
 
                                             {/* Element Properties */}
-                                            {editingTheme.layouts.custom.length > 0 && (
+                                            {editingTheme.pages && editingTheme.pages[editingTheme.selectedPage || 'page1'] && 
+                                             editingTheme.pages[editingTheme.selectedPage || 'page1'].elements.length > 0 && (
                                                 <div>
                                                     <Label className="text-sm font-medium mb-2 block">Element Properties</Label>
                                                     <div className="space-y-3">
-                                                        {(editingTheme.layouts.custom || []).filter(Boolean).map((element, index) => (
+                                                        {(editingTheme.pages[editingTheme.selectedPage || 'page1'].elements || []).filter(Boolean).map((element, index) => (
                                                             <div key={element.id} className="border border-gray-200 rounded-lg p-3">
                                                                 <div className="flex items-center justify-between mb-2">
                                                                     <span className="font-medium text-sm">{element.name}</span>
                                                                     <button
-                                                                        onClick={() => removeElement(element.id)}
+                                                                        onClick={() => removeElementFromPage(element.id)}
                                                                         className="text-red-500 hover:text-red-700 text-xs"
                                                                     >
                                                                         Remove
@@ -1486,8 +3316,8 @@ const SettingsPage = () => {
                                                                             type="number"
                                                                             min="0"
                                                                             max="100"
-                                                                            value={element.structure?.x}
-                                                                            onChange={(e) => updateElementProperty(element.id, 'x', parseInt(e.target.value))}
+                                                                            value={element.structure?.x || 0}
+                                                                            onChange={(e) => updateElementPropertyInPage(element.id, 'x', parseInt(e.target.value))}
                                                                             className="h-6 text-xs"
                                                                         />
                                                                     </div>
@@ -1497,8 +3327,8 @@ const SettingsPage = () => {
                                                                             type="number"
                                                                             min="0"
                                                                             max="100"
-                                                                            value={element.structure?.y}
-                                                                            onChange={(e) => updateElementProperty(element.id, 'y', parseInt(e.target.value))}
+                                                                            value={element.structure?.y || 0}
+                                                                            onChange={(e) => updateElementPropertyInPage(element.id, 'y', parseInt(e.target.value))}
                                                                             className="h-6 text-xs"
                                                                         />
                                                                     </div>
@@ -1508,8 +3338,8 @@ const SettingsPage = () => {
                                                                             type="number"
                                                                             min="10"
                                                                             max="100"
-                                                                            value={element.structure?.width}
-                                                                            onChange={(e) => updateElementProperty(element.id, 'width', parseInt(e.target.value))}
+                                                                            value={element.structure?.width || 30}
+                                                                            onChange={(e) => updateElementPropertyInPage(element.id, 'width', parseInt(e.target.value))}
                                                                             className="h-6 text-xs"
                                                                         />
                                                                     </div>
@@ -1519,8 +3349,8 @@ const SettingsPage = () => {
                                                                             type="number"
                                                                             min="10"
                                                                             max="100"
-                                                                            value={element.structure?.height}
-                                                                            onChange={(e) => updateElementProperty(element.id, 'height', parseInt(e.target.value))}
+                                                                            value={element.structure?.height || 20}
+                                                                            onChange={(e) => updateElementPropertyInPage(element.id, 'height', parseInt(e.target.value))}
                                                                             className="h-6 text-xs"
                                                                         />
                                                                     </div>
@@ -1532,7 +3362,7 @@ const SettingsPage = () => {
                                                                         <Label className="text-xs">Text Content</Label>
                                                                         <Textarea
                                                                             value={element.structure?.content || ''}
-                                                                            onChange={(e) => updateElementProperty(element.id, 'content', e.target.value)}
+                                                                            onChange={(e) => updateElementPropertyInPage(element.id, 'content', e.target.value)}
                                                                             placeholder="Enter text content..."
                                                                             className="h-16 text-xs"
                                                                         />
@@ -1544,7 +3374,7 @@ const SettingsPage = () => {
                                                                         <Label className="text-xs">List Items (one per line)</Label>
                                                                         <Textarea
                                                                             value={element.structure?.items?.join('\n') || ''}
-                                                                            onChange={(e) => updateElementProperty(element.id, 'items', e.target.value.split('\n').filter(item => item.trim()))}
+                                                                            onChange={(e) => updateElementPropertyInPage(element.id, 'items', e.target.value.split('\n').filter(item => item.trim()))}
                                                                             placeholder="Item 1&#10;Item 2&#10;Item 3"
                                                                             className="h-16 text-xs"
                                                                         />
@@ -1556,7 +3386,7 @@ const SettingsPage = () => {
                                                                         <Label className="text-xs">Image URL or Prompt</Label>
                                                                         <Input
                                                                             value={element.structure?.src || ''}
-                                                                            onChange={(e) => updateElementProperty(element.id, 'src', e.target.value)}
+                                                                            onChange={(e) => updateElementPropertyInPage(element.id, 'src', e.target.value)}
                                                                             placeholder="Enter image URL or AI prompt..."
                                                                             className="h-6 text-xs"
                                                                         />
@@ -1568,7 +3398,7 @@ const SettingsPage = () => {
                                                                         <Label className="text-xs">Chart Type</Label>
                                                                         <Select
                                                                             value={element.structure?.chartType || 'bar'}
-                                                                            onValueChange={(value) => updateElementProperty(element.id, 'chartType', value)}
+                                                                            onValueChange={(value) => updateElementPropertyInPage(element.id, 'chartType', value)}
                                                                         >
                                                                             <SelectTrigger className="h-6 text-xs">
                                                                                 <SelectContent>
@@ -1587,59 +3417,6 @@ const SettingsPage = () => {
                                                 </div>
                                             )}
                                         </div>
-                                    </div>
-                                </TabsContent>
-
-                                <TabsContent value="prompts" className="space-y-4">
-                                    <div>
-                                        <Label htmlFor="image-prompt">Image Generation Prompt</Label>
-                                        <Textarea
-                                            id="image-prompt"
-                                            value={editingTheme.prompts.imagePrompt}
-                                            onChange={(e) => setEditingTheme({
-                                                ...editingTheme,
-                                                prompts: { ...editingTheme.prompts, imagePrompt: e.target.value }
-                                            })}
-                                            placeholder="Describe the style for AI-generated images..."
-                                            rows={3}
-                                        />
-                                        <p className="text-xs text-gray-600 mt-1">
-                                            This prompt will be used to generate images that match your theme's style
-                                        </p>
-                                    </div>
-
-                                    <div>
-                                        <Label htmlFor="content-style">Content Style Prompt</Label>
-                                        <Textarea
-                                            id="content-style"
-                                            value={editingTheme.prompts.contentStyle}
-                                            onChange={(e) => setEditingTheme({
-                                                ...editingTheme,
-                                                prompts: { ...editingTheme.prompts, contentStyle: e.target.value }
-                                            })}
-                                            placeholder="Describe the writing style for content..."
-                                            rows={3}
-                                        />
-                                        <p className="text-xs text-gray-600 mt-1">
-                                            This prompt will influence how content is written for your theme
-                                        </p>
-                                    </div>
-
-                                    <div>
-                                        <Label htmlFor="slide-structure">Slide Structure Prompt</Label>
-                                        <Textarea
-                                            id="slide-structure"
-                                            value={editingTheme.prompts.slideStructure}
-                                            onChange={(e) => setEditingTheme({
-                                                ...editingTheme,
-                                                prompts: { ...editingTheme.prompts, slideStructure: e.target.value }
-                                            })}
-                                            placeholder="Describe the layout and structure preferences..."
-                                            rows={3}
-                                        />
-                                        <p className="text-xs text-gray-600 mt-1">
-                                            This prompt will guide how slides are structured and laid out
-                                        </p>
                                     </div>
                                 </TabsContent>
                             </Tabs>
